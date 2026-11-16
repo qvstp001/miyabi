@@ -188,10 +188,8 @@ func TestOfflineScanUsesCatalogueIdentityAndKeepsItOnRescan(t *testing.T) {
 	if !slices.Equal(download.FileIds, []string{"prefixed", "unnamed"}) || download.Hash != offline.Hash || download.Status != offline.Status {
 		t.Fatalf("scan file tracking changed download state or lost files: %+v", download)
 	}
-	metadata := lib.database.Task.Query().Where(task.TypeEQ("scrape")).OnlyX(ctx)
-	input, err := tasks.DecodePayload[scrapePkg.MetadataPayload](metadata.Payload)
-	if err != nil || input.MovieID != record.ID || input.JavDBID != payload.JavDBID {
-		t.Fatalf("metadata job lost the known JavDB ID: %#v, %v", input, err)
+	if lib.database.Task.Query().Where(task.TypeEQ("scrape")).ExistX(ctx) {
+		t.Fatal("completed download queued automatic scraping")
 	}
 	full := domain.ScanPayload{Source: payload.Source}
 	restored, err := identifyScanVideosForTest(ctx, lib, full, entries)
@@ -512,7 +510,8 @@ func TestScanReconcile_CleansUpEmbyDirectoryAndNotifiesEmbyOnMovieDeletion(t *te
 	// 7. Verify notifier was notified of the deletion
 	notifier.mu.Lock()
 	defer notifier.mu.Unlock()
-	if len(notifier.notified) != 1 || notifier.notified[0] != movieDir {
+	if len(notifier.notified) != 2 || !slices.Contains(notifier.notified, movieDir) ||
+		!slices.Contains(notifier.notified, export.EmbyMovieDir(embyDir, "SSIS-999")) {
 		t.Fatalf("expected notifier to receive %s, got: %+v", movieDir, notifier.notified)
 	}
 

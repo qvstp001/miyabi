@@ -11,7 +11,7 @@ import { beforeEach, expect, onTestFinished, test, vi } from 'vitest'
 
 import { apiGet } from '@/api/client'
 import * as clientAPI from '@/api/client'
-import { libraryKeys, useStartLibraryScan, useRescrapeLibraryMovie } from '@/api/library'
+import { libraryKeys, useStartLibraryScan } from '@/api/library'
 import { movieStateKeys } from '@/api/movie-states'
 import { offlineKeys, useAddOffline, useOfflineControl, type OfflineActivity } from '@/api/offline'
 import { panKeys } from '@/api/pan'
@@ -420,10 +420,6 @@ function observeActivity(f: ReturnType<typeof fixture>, tasks: OfflineActivity['
   onTestFinished(observer.subscribe(() => {}))
 }
 
-function useRescrapeFixture() {
-  return useRescrapeLibraryMovie(42)
-}
-
 function useAddFixture() {
   return useAddOffline('one')
 }
@@ -437,8 +433,7 @@ function useNextFixture() {
 }
 
 for (const scan of [
-  { name: 'scan', useOperation: useStartLibraryScan, input: false },
-  { name: 'rescrape', useOperation: useRescrapeFixture, input: 'ABP-001' }
+  { name: 'scan', useOperation: useStartLibraryScan, input: undefined }
 ]) {
   test(`${scan.name}: an SSE snapshot arriving first survives an older mutation response`, async () => {
     const f = fixture()
@@ -641,3 +636,21 @@ for (const { action, useOperation } of [
     })
   }
 }
+
+test('a local sync response is cached even when 115 is disconnected', async () => {
+  const f = fixture()
+  f.client.setQueryData(panKeys.account, { connected: false })
+  f.client.setQueryData(taskKeys.all, [])
+  const { result, reads } = deferredResponses(f, '/api/tasks')
+  const local = {
+    ...queuedScan,
+    source: { account_id: 'local', directory: { id: 'C:/media', name: 'Emby', path: 'C:/media' } }
+  }
+  const mutation = operation(f.client, useStartLibraryScan).execute(undefined)
+  await vi.advanceTimersByTimeAsync(0)
+  result.resolve(Response.json(local))
+  await vi.advanceTimersByTimeAsync(0)
+  expect(f.client.getQueryData<Task[]>(taskKeys.all)?.[0]).toEqual(local)
+  reads[0]!.resolve(Response.json([local]))
+  await mutation
+})

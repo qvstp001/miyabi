@@ -13,28 +13,81 @@ import {
   InputGroupButton,
   InputGroupInput
 } from '@/components/ui/input-group'
-import { DISCOVER_PAGE_SIZE } from '@/features/discover/constants'
+import { DISCOVER_ZONES } from '@/features/discover/constants'
+import { SEARCH_SORTS, SEARCH_FILTERS } from '@/features/discover/filter-options'
+import { FilterSelect } from '@/features/discover/filter-select'
+import { CatalogueDisplaySettings } from '@/features/discover/display-settings'
+import { useCatalogueDisplay } from '@/stores/catalogue-display'
+import type { SearchFilters } from './search'
 import { DiscoverResults } from '@/features/discover/results'
 
 export function SearchPage({
   keyword,
   page,
   onSearch,
-  onPageChange
+  onPageChange,
+  filters,
+  onFilterChange
 }: {
   keyword: string
   page: number
   onSearch: (keyword: string) => void
   onPageChange: (page: number) => void
+  filters: SearchFilters
+  onFilterChange: (filters: SearchFilters) => void
 }) {
   return (
     <AppPage>
-      <PageHeader title="搜索" description="搜索 JavDB 的所有影片" />
+      <PageHeader title="搜索" description="搜索 JavDB 的所有影片">
+        <Button asChild variant="outline">
+          <Link to="/discover/explore" search={{ view: 'actors', q: keyword || undefined }}>
+            搜索演员
+          </Link>
+        </Button>
+      </PageHeader>
       <SearchForm key={`form:${keyword}`} keyword={keyword} onSearch={onSearch} />
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div className="flex flex-wrap gap-2">
+          <FilterSelect
+            label="分区"
+            value={filters.zone ?? 'all'}
+            options={[{ value: 'all', label: '全部分区' }, ...DISCOVER_ZONES]}
+            onChange={value => onFilterChange({
+              zone: value === 'all' ? undefined : value as SearchFilters['zone']
+            })}
+          />
+          <FilterSelect
+            label="排序"
+            value={filters.sort ?? 'default'}
+            options={SEARCH_SORTS}
+            onChange={value => onFilterChange({
+              sort: value === 'default' ? undefined : value as SearchFilters['sort']
+            })}
+          />
+          <FilterSelect
+            label="资源"
+            value={filters.filter ?? 'all'}
+            options={SEARCH_FILTERS}
+            onChange={value => onFilterChange({
+              filter: value === 'all' ? undefined : value as SearchFilters['filter']
+            })}
+          />
+          <Button
+            variant="ghost"
+            className="self-end"
+            disabled={!filters.zone && !filters.sort && !filters.filter}
+            onClick={() => onFilterChange({ zone: undefined, sort: undefined, filter: undefined })}
+          >
+            清空筛选
+          </Button>
+        </div>
+        <CatalogueDisplaySettings onPageSizeChange={() => onPageChange(1)} />
+      </div>
       {keyword ? (
         <SearchResults
           key={`results:${keyword}`}
           keyword={keyword}
+          filters={filters}
           page={page}
           onPageChange={onPageChange}
         />
@@ -92,6 +145,7 @@ function SearchForm({
 }
 
 function SearchResults({
+  filters,
   keyword,
   page,
   onPageChange
@@ -99,8 +153,17 @@ function SearchResults({
   keyword: string
   page: number
   onPageChange: (page: number) => void
+  filters: SearchFilters
 }) {
-  const movies = useSearchMovies({ query: keyword, page, limit: DISCOVER_PAGE_SIZE })
+  const pageSize = useCatalogueDisplay(state => state.pageSize)
+  const movies = useSearchMovies({
+    query: keyword,
+    page,
+    limit: pageSize,
+    zone: filters.zone,
+    sort: filters.sort,
+    filter: filters.filter
+  })
   if (movies.isError && isJavDBLoginRequired(movies.error)) {
     return <JavDBLoginRequired />
   }

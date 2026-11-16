@@ -22,6 +22,7 @@ type LocalScanResult struct {
 	FilesScanned int `json:"files_scanned"`
 	MediaFiles   int `json:"media_files"`
 	MoviesAdded  int `json:"movies_added"`
+	Movies       int `json:"movies"`
 	NFORead      int `json:"nfo_read"`
 }
 
@@ -107,6 +108,7 @@ func (s *LocalScanner) Scan(ctx context.Context, rootDir string) (*LocalScanResu
 		return nil, fmt.Errorf("walk local directory %s: %w", rootDir, err)
 	}
 
+	movies := make(map[string]bool)
 	batch := make([]localMedia, 0, localScanBatchSize)
 	for dir, group := range dirs {
 		if ctx.Err() != nil {
@@ -127,6 +129,7 @@ func (s *LocalScanner) Scan(ctx context.Context, rootDir string) (*LocalScanResu
 				continue
 			}
 			result.MediaFiles++
+			movies[code] = true
 
 			posterPath, fanartPath := findMatchingArtwork(dir, stem, group.imageFiles)
 			batch = append(batch, localMedia{
@@ -149,6 +152,7 @@ func (s *LocalScanner) Scan(ctx context.Context, rootDir string) (*LocalScanResu
 			return nil, err
 		}
 	}
+	result.Movies = len(movies)
 	return result, nil
 }
 

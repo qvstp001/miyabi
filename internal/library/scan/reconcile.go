@@ -21,13 +21,14 @@ import (
 	"github.com/ppxb/miyabi/internal/export"
 	mediaimage "github.com/ppxb/miyabi/internal/image"
 	"github.com/ppxb/miyabi/internal/library/scrape"
+	"github.com/ppxb/miyabi/internal/pan"
 	"github.com/ppxb/miyabi/internal/tasks"
 )
 
 const reconcileBatchSize = 100
 
-// ReconcileScan prepares cached exports before atomically committing index
-// cleanup, metadata jobs, Emby notifications and scan completion.
+// ReconcileScan prepares playback links before committing index cleanup and scan completion.
+// Only an explicit rebuild can enqueue metadata jobs.
 func ReconcileScan(ctx context.Context, db *ent.Client, taskID int, payload *domain.ScanPayload, images *mediaimage.Cache, tasksSvc *tasks.Service, cfg export.Config, notifier export.MediaNotifier) error {
 	run := scanRun{scanner: &Scanner{db: db, images: images, tasksSvc: tasksSvc, notifier: notifier, exportMgr: export.NewManager(cfg)}, taskID: taskID, payload: payload}
 	return run.reconcile(ctx)
@@ -81,49 +82,43 @@ func (r *scanRun) cleanupReassignedExports(ctx context.Context, cfg export.Confi
 	return nil
 }
 
-// Prepare only bounded pages of completed movies. Files that reconciliation
-// will delete must not participate in snapshot comparison or regenerated STRMs.
+// Prepare streams in bounded pages without holding the database writer.
+// Metadata and artwork belong to external tools unless a rebuild is requested.
 func (r *scanRun) prepareReconcile(ctx context.Context, cfg export.Config) (map[int]time.Time, error) {
 	if r.payload.Rebuild {
 		return nil, nil
 	}
 	indexed := file.And(database.LibraryFiles(r.payload.Source), file.ScanIDEQ(r.payload.ScanID))
 	retained := file.And(database.LibraryFiles(r.payload.Source), file.Not(r.staleFiles()))
-	reusable := make(map[int]time.Time)
+	prepared := make(map[int]time.Time)
 	for after := 0; ; {
 		if err := tasks.Checkpoint(ctx, r.scanner.db); err != nil {
 			return nil, err
 		}
-		query := r.scanner.db.Movie.Query().Where(movie.IDGT(after), movie.ScrapeStatusEQ(movie.ScrapeStatusDone), movie.HasFilesWith(indexed)).
+		records, err := r.scanner.db.Movie.Query().Where(movie.IDGT(after), movie.HasFilesWith(indexed)).
+			Select(movie.FieldID, movie.FieldCode, movie.FieldUpdatedAt).
 			Order(movie.ByID()).Limit(reconcileBatchSize).
-			WithFiles(func(q *ent.FileQuery) { q.Where(retained) })
-		records, err := query.All(ctx)
+			WithFiles(func(q *ent.FileQuery) { q.Where(retained) }).All(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("load completed scan movies: %w", err)
+			return nil, fmt.Errorf("load indexed movies for stream export: %w", err)
 		}
 		if len(records) == 0 {
-			return reusable, nil
+			return prepared, nil
 		}
 		for _, record := range records {
 			if err := ctx.Err(); err != nil {
 				return nil, err
 			}
-			if !scrape.SnapshotMatches(record, r.payload.Source) {
-				continue
-			}
-			cached, err := r.scanner.images.Exists(scrape.MovieArtwork(record))
-			if err != nil {
-				return nil, fmt.Errorf("check cached artwork: %w", err)
-			}
-			if !cached {
-				continue
-			}
 			if cfg.EmbyDir != "" {
-				if _, err := scrape.ExportLocalMovie(cfg.EmbyDir, cfg.PublicURL, cfg.STRMToken, record, r.scanner.images); err != nil {
-					return nil, fmt.Errorf("export local movie %s: %w", record.Code, err)
+				videos := make([]pan.File, 0, len(record.Edges.Files))
+				for _, entry := range record.Edges.Files {
+					videos = append(videos, pan.File{ID: entry.FileID, Name: entry.Name, Size: entry.Size, PickCode: entry.PickCode})
+				}
+				if _, err := export.WriteSTRM(cfg, record.Code, videos); err != nil {
+					return nil, fmt.Errorf("export playback links for %s: %w", record.Code, err)
 				}
 			}
-			reusable[record.ID] = record.UpdatedAt
+			prepared[record.ID] = record.UpdatedAt
 		}
 		after = records[len(records)-1].ID
 	}
@@ -193,6 +188,18 @@ func (r *scanRun) reconcileTx(ctx context.Context, tx *ent.Tx, cfg export.Config
 		if len(records) == 0 {
 			break
 		}
+		if !r.payload.Rebuild {
+			for _, record := range records {
+				if _, prepared := reusable[record.ID]; prepared && cfg.EmbyDir != "" && r.scanner.notifier != nil {
+					// Notify even on a retry: writing the stream may precede a failed DB commit.
+					if err := r.scanner.notifier.NotifyUpdatedTx(ctx, tx, export.EmbyMovieDir(cfg.EmbyDir, record.Code)); err != nil {
+						return err
+					}
+				}
+			}
+			after = records[len(records)-1].ID
+			continue
+		}
 		builders := make([]*ent.TaskCreate, 0, len(records))
 		keys := make([]string, len(records))
 		for i, record := range records {
@@ -228,16 +235,6 @@ func (r *scanRun) reconcileTx(ctx context.Context, tx *ent.Tx, cfg export.Config
 				item := active[index]
 				if item.ParentID != r.taskID {
 					r.payload.ReusedTasks = append(r.payload.ReusedTasks, item.ID)
-				}
-				continue
-			}
-			if checked, ok := reusable[record.ID]; ok && checked.Equal(record.UpdatedAt) {
-				if cfg.EmbyDir != "" && r.scanner.notifier != nil {
-					// Also notify on a retry that finds complete exports: a previous
-					// attempt may have written them before its database commit failed.
-					if err := r.scanner.notifier.NotifyUpdatedTx(ctx, tx, export.EmbyMovieDir(cfg.EmbyDir, record.Code)); err != nil {
-						return err
-					}
 				}
 				continue
 			}

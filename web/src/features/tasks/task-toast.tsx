@@ -58,8 +58,7 @@ export function useNotifyScanTask() {
 
 export function notifyScanTask(task: ScanTask, options: TaskToastOptions = {}) {
   const active = isTaskActive(task)
-  const action = task.rebuild ? '重建' : '同步'
-  const title = task.movie_id ? `${task.code} 重新刮削` : `媒体库${action}`
+  const title = '媒体库同步'
   const props = taskToastOptions(
     scanToastID(task.id),
     active,
@@ -68,35 +67,16 @@ export function notifyScanTask(task: ScanTask, options: TaskToastOptions = {}) {
   )
   if (active) {
     // Sonner's loading type hides the close button; long tasks remain dismissible.
-    toast.info(
-      options.waiting
-        ? '正在连接任务服务'
-        : task.movie_id
-          ? `正在重新刮削 ${task.code}`
-          : `正在${action}媒体库`,
-      {
-        ...props,
-        icon:
-          options.waiting || task.paused ? undefined : (
-            <LoaderCircleIcon className="size-4 animate-spin" />
-          ),
-        description: (
-          <TaskProgress
-            current={scanStage(task)}
-            label={scanStatus(task)}
-            progress={task.scan.metadata_total > 0 ? task.progress : undefined}
-          />
-        )
-      }
-    )
-  } else if (task.status === 'failed') {
-    toast.error(task.scan.metadata_failed && !task.movie_id ? `${title}结束` : `${title}失败`, {
+    toast.info(options.waiting ? '正在连接任务服务' : '正在同步媒体库', {
       ...props,
-      description:
-        task.scan.metadata_failed && !task.movie_id
-          ? `${task.scan.metadata_failed} 部影片失败`
-          : task.error
+      icon:
+        options.waiting || task.paused ? undefined : (
+          <LoaderCircleIcon className="size-4 animate-spin" />
+        ),
+      description: <TaskProgress current={scanStage(task)} label={scanStatus(task)} />
     })
+  } else if (task.status === 'failed') {
+    toast.error(`${title}失败`, { ...props, description: task.error })
   } else {
     toast.success(`${title}完成`, {
       ...props,
@@ -148,13 +128,7 @@ export function notifyOfflineTask(
                   ? 'queued'
                   : 'locating'
           }
-          progress={
-            task.phase === 'downloading'
-              ? task.progress
-              : scan && scan.scan.metadata_total > 0
-                ? scan.progress
-                : undefined
-          }
+          progress={task.phase === 'downloading' ? task.progress : undefined}
         />
       )
     })
@@ -164,7 +138,7 @@ export function notifyOfflineTask(
     const notify = task.error ? toast.warning : toast.success
     notify(task.code, {
       ...props,
-      description: task.error ? `元数据处理失败：${task.error}` : '下载与入库处理已完成'
+      description: task.error ? `入库处理失败：${task.error}` : '下载与入库处理已完成'
     })
   } else if (task.error || task.status === 'failed') {
     toast.error(task.code, { ...props, description: task.error ?? '处理失败，请重试。' })

@@ -83,7 +83,7 @@ func (service *Service) submissions(ctx context.Context, records []*ent.OfflineD
 			file.FileIDIn(fileIDs[start:min(start+500, len(fileIDs))]...)).
 			Select(file.FieldFileID, file.FieldMovieID).
 			WithMovie(func(query *ent.MovieQuery) {
-				query.Select(movie.FieldID, movie.FieldCode, movie.FieldJavdbID, movie.FieldScrapeStatus)
+				query.Select(movie.FieldID, movie.FieldCode, movie.FieldJavdbID)
 			}).All(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("read downloaded file index: %w", err)
@@ -172,7 +172,8 @@ func (service *Service) submissions(ctx context.Context, records []*ent.OfflineD
 				matched.JavdbID == nil && matched.Code == codeid.Normalize(record.Code)) {
 				item.Phase = "in_library"
 				item.LibraryID = matched.ID
-				if matched.ScrapeStatus != movie.ScrapeStatusFailed {
+				// An indexed video does not imply its STRM export succeeded.
+				if scan, exists := scans[record.ScanTaskID]; !exists || scan.Status != string(task.StatusFailed) {
 					item.Error = nil
 				}
 				break

@@ -14,7 +14,6 @@ import (
 	"github.com/ppxb/miyabi/internal/ent/task"
 	"github.com/ppxb/miyabi/internal/export"
 	"github.com/ppxb/miyabi/internal/library/scan"
-	"github.com/ppxb/miyabi/internal/library/scrape"
 	"github.com/ppxb/miyabi/internal/nfo"
 	"github.com/ppxb/miyabi/internal/pan"
 	"github.com/ppxb/miyabi/internal/tasks"
@@ -61,10 +60,8 @@ func TestScanRepairsReportedLetterPartsAndExportsInOrder(t *testing.T) {
 		if film.Code != "ONSD-340" || len(film.Edges.Files) != 2 || lib.database.File.Query().CountX(ctx) != 2 {
 			t.Fatalf("rescan %d did not group the original files: %+v", attempt, film)
 		}
-		child := lib.database.Task.Query().Where(task.TypeEQ("scrape")).OnlyX(ctx)
-		input, err := tasks.DecodePayload[scrape.MetadataPayload](child.Payload)
-		if err != nil || input.Code != film.Code || input.MovieID != film.ID {
-			t.Fatalf("wrong scrape identity: %+v, %v", input, err)
+		if lib.database.Task.Query().Where(task.TypeEQ("scrape")).ExistX(ctx) {
+			t.Fatal("repairing file parts queued automatic scraping")
 		}
 		progress, err := tasks.DecodePayload[domain.ScanPayload](lib.database.Task.GetX(ctx, job.ID).Payload)
 		if err != nil || progress.Scan.Movies != 1 || progress.Scan.MatchedFiles != 2 ||

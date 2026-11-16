@@ -42,7 +42,6 @@ func TestLoadDefaultsAndEnvironment(t *testing.T) {
 				EmbyDir:        filepath.Join("./data", "emby"),
 				PublicURL:      "http://" + netx.OutboundIP() + ":8080",
 				LogLevel:       slog.LevelInfo,
-				EmbySyncActors: true,
 			},
 		},
 		{
@@ -73,7 +72,6 @@ func TestLoadDefaultsAndEnvironment(t *testing.T) {
 				EmbyServerURL:  "http://192.168.1.50:8096",
 				EmbyAPIKey:     "my-emby-key",
 				EmbyMediaPath:  "/media",
-				EmbySyncActors: false,
 			},
 		},
 		{
@@ -85,7 +83,6 @@ func TestLoadDefaultsAndEnvironment(t *testing.T) {
 				EmbyDir:        filepath.Join("./data", "emby"),
 				PublicURL:      "http://" + netx.OutboundIP() + ":8080",
 				LogLevel:       slog.LevelInfo,
-				EmbySyncActors: true,
 			},
 		},
 	} {

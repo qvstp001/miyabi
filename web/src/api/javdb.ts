@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { apiGet, apiPost, apiPut } from '@/api/client'
+import { exploreKeys } from './explore'
 
 export type JavDBConfig = {
   username: string
@@ -31,9 +32,12 @@ export function useJavDBConfig() {
 export function useUpdateJavDBConfig() {
   const queryClient = useQueryClient()
   return useMutation({
+    onMutate: () => queryClient.cancelQueries({ queryKey: exploreKeys.all }),
     mutationFn: (config: JavDBConfig) => apiPut<JavDBConfig>('/api/settings/javdb', config),
-    onSuccess: next => {
+    onSuccess: async next => {
       queryClient.setQueryData(javdbKeys.config, next)
+      await queryClient.cancelQueries({ queryKey: exploreKeys.all })
+      await queryClient.resetQueries({ queryKey: exploreKeys.all })
       void queryClient.invalidateQueries({ queryKey: searchQueryKey })
     }
   })
@@ -42,9 +46,12 @@ export function useUpdateJavDBConfig() {
 export function useTestJavDBLogin() {
   const queryClient = useQueryClient()
   return useMutation({
+    onMutate: () => queryClient.cancelQueries({ queryKey: exploreKeys.all }),
     mutationFn: (config: JavDBConfig) =>
       apiPost<JavDBLoginInfo>('/api/settings/javdb/test', config),
-    onSuccess: () => {
+    onSuccess: async () => {
+      await queryClient.cancelQueries({ queryKey: exploreKeys.all })
+      await queryClient.resetQueries({ queryKey: exploreKeys.all })
       void queryClient.invalidateQueries({ queryKey: searchQueryKey })
     }
   })

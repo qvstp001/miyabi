@@ -405,3 +405,15 @@ test('leaving immediately after cache removal cancels the pending reload', async
   await setImmediate()
   assert.equal(requests.length, 0)
 })
+
+
+test('exploration feed pages supply cached recommendation cards without an extra detail request', () => {
+  const client = new QueryClient()
+  onTestFinished(() => client.clear())
+  const card = movie('explore')
+  client.setQueryData(['discover', 'explore', 'feed', { kind: 'personal', status: 'watched', page: 1 }], {
+    items: [card], has_more: false
+  })
+  assert.equal(findCachedMovieCard(client, card.id), card)
+  assert.equal(findCachedMovieCard(client, 'missing'), undefined)
+})

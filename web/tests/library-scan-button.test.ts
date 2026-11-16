@@ -15,7 +15,7 @@ vi.mock('@/api/library', () => ({
 vi.mock('@/api/tasks', () => ({
   useTasks: vi.fn(),
   isScanTask: () => true,
-  isTaskActive: () => false
+  isTaskActive: (task: { status: string }) => ['queued', 'running'].includes(task.status)
 }))
 vi.mock('@/features/tasks/task-events', () => ({
   useTaskConnection: () => ({ status: 'connected' })
@@ -61,7 +61,6 @@ test('loading and hidden controls still retain the scan mutation hook', () => {
   >)
   const props = {
     scanning: false,
-    rebuilding: false,
     connected: true,
     onStarted: vi.fn()
   }
@@ -82,13 +81,12 @@ test('scan submission keeps success navigation and failure notification', () => 
     loading: false,
     available: true,
     scanning: false,
-    rebuilding: false,
     connected: true,
     onStarted
   })!
   const button = elements(tree.props.children)[0]!
   ;(button.props.onClick as () => void)()
-  expect(mutate.mock.calls[0]![0]).toBe(false)
+  expect(mutate.mock.calls[0]![0]).toBeUndefined()
   const callbacks = mutate.mock.calls[0]![1]
   const task = { id: 123 }
   callbacks.onSuccess(task)
@@ -102,28 +100,42 @@ test('scan submission keeps success navigation and failure notification', () => 
   )
 })
 
-test('rebuild control submits a full rebuild and both controls disable during processing', () => {
-  const mutate = vi.fn()
+test('only the sync control is available and it disables during scanning', () => {
   vi.mocked(useStartLibraryScan).mockReturnValue({
     isPending: false,
-    mutate
+    mutate: vi.fn()
   } as unknown as ReturnType<typeof useStartLibraryScan>)
   const props = {
     loading: false,
     available: true,
     scanning: false,
-    rebuilding: false,
     connected: true,
     onStarted: vi.fn()
   }
-  const buttons = (tree: ReturnType<typeof LibraryScanButton>) => elements(tree!.props.children)
-  const controls = buttons(LibraryScanButton(props))
-  expect(
-    controls.map(button => elements(button.props.children as ReactNode).at(-1)?.props.children)
-  ).toEqual(['同步媒体库', '重建媒体库'])
-  ;(controls[1]!.props.onClick as () => void)()
-  expect(mutate.mock.calls[0]![0]).toBe(true)
-  for (const button of buttons(LibraryScanButton({ ...props, scanning: true, rebuilding: true }))) {
-    expect(button.props.disabled).toBe(true)
+  const controls = elements(LibraryScanButton(props)!.props.children)
+  expect(controls).toHaveLength(1)
+  expect(elements(controls[0]!.props.children as ReactNode).at(-1)?.props.children).toBe('同步媒体库')
+  expect(elements(LibraryScanButton({ ...props, scanning: true })!.props.children)[0]!.props.disabled).toBe(true)
+})
+
+test('local-only libraries can sync and local import activity keeps the sync control busy', () => {
+  const local = { account_id: 'local', directory: { id: 'C:/media', path: 'C:/media' } }
+  const remote = { account_id: '100', directory: { id: '10', path: '/Movies' } }
+  for (const source of [undefined, remote]) {
+    vi.mocked(useLibraryMovies).mockReturnValue({
+      isSuccess: true,
+      data: { source, local_source: local, movies: [], total: 0 }
+    } as unknown as ReturnType<typeof useLibraryMovies>)
+    vi.mocked(useTasks).mockReturnValue({
+      data: [
+        { id: 2, source: source ?? local, status: 'done' },
+        { id: 1, source: local, status: 'running' }
+      ]
+    } as unknown as ReturnType<typeof useTasks>)
+    const page = LibraryPage({ page: 1, onPageChange: vi.fn() })
+    const header = elements(page.props.children)[0]!
+    const control = elements(header.props.children as ReactNode)[0]!
+    expect(control.props.available).toBe(true)
+    expect(control.props.scanning).toBe(true)
   }
 })

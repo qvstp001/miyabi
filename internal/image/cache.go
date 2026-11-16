@@ -172,6 +172,9 @@ func publishImage(temporary, destination string, body []byte) error {
 	return err
 }
 
+// Artwork serves cached images imported from external NFO files.
+func (cache *Cache) Artwork(key string) ([]byte, error) { return cache.Read(key) }
+
 func (cache *Cache) Read(key string) ([]byte, error) {
 	name, err := cache.filePath(key)
 	if err != nil {

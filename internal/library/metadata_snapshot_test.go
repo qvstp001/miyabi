@@ -83,43 +83,43 @@ func newCompletedScanFixture(t *testing.T) *completedScanFixture {
 	}
 }
 
-func TestRescanSchedulesOnlyChangedOrIncompleteMetadata(t *testing.T) {
+func TestRescanDoesNotScheduleScrapingForChangedOrIncompleteMetadata(t *testing.T) {
 	for _, scenario := range []struct {
 		name   string
 		change func(*testing.T, *completedScanFixture)
 		jobs   int
 	}{
 		{name: "unchanged"},
-		{name: "outdated poster", jobs: 1, change: func(t *testing.T, f *completedScanFixture) {
+		{name: "outdated poster", change: func(t *testing.T, f *completedScanFixture) {
 			f.snapshot.PosterVersion = 0
 			f.movie.Update().SetMetadataSnapshot(f.snapshot).ExecX(t.Context())
 		}},
-		{name: "movie without snapshot", jobs: 1, change: func(t *testing.T, f *completedScanFixture) {
+		{name: "movie without snapshot", change: func(t *testing.T, f *completedScanFixture) {
 			f.movie.Update().ClearMetadataSnapshot().ExecX(t.Context())
 		}},
 		{name: "deleted task history", change: func(t *testing.T, f *completedScanFixture) {
 			f.lib.database.Task.DeleteOne(f.covered).ExecX(t.Context())
 		}},
-		{name: "new part", jobs: 1, change: func(_ *testing.T, f *completedScanFixture) {
+		{name: "new part", change: func(_ *testing.T, f *completedScanFixture) {
 			video := fixtureVideo("102", "ABP-001-CD2.mp4")
 			f.videos = append(f.videos, video)
 		}},
-		{name: "moved video", jobs: 1, change: func(_ *testing.T, f *completedScanFixture) { f.videos[0].ParentID = "20" }},
-		{name: "missing cache", jobs: 1, change: func(t *testing.T, f *completedScanFixture) {
+		{name: "moved video", change: func(_ *testing.T, f *completedScanFixture) { f.videos[0].ParentID = "20" }},
+		{name: "missing cache", change: func(t *testing.T, f *completedScanFixture) {
 			if err := f.movie.Update().SetCover(mediaimage.URLPrefix + strings.Repeat("a", 64)).Exec(t.Context()); err != nil {
 				t.Fatal(err)
 			}
 		}},
-		{name: "previous failure", jobs: 1, change: func(t *testing.T, f *completedScanFixture) {
+		{name: "previous failure", change: func(t *testing.T, f *completedScanFixture) {
 			if err := f.movie.Update().SetScrapeStatus(movie.ScrapeStatusFailed).Exec(t.Context()); err != nil {
 				t.Fatal(err)
 			}
 		}},
-		{name: "another root snapshot", jobs: 1, change: func(t *testing.T, f *completedScanFixture) {
+		{name: "another root snapshot", change: func(t *testing.T, f *completedScanFixture) {
 			f.snapshot.DirectoryID = "other-root"
 			f.movie.Update().SetMetadataSnapshot(f.snapshot).ExecX(t.Context())
 		}},
-		{name: "another account snapshot", jobs: 1, change: func(t *testing.T, f *completedScanFixture) {
+		{name: "another account snapshot", change: func(t *testing.T, f *completedScanFixture) {
 			f.snapshot.AccountID = "other-account"
 			f.movie.Update().SetMetadataSnapshot(f.snapshot).ExecX(t.Context())
 		}},

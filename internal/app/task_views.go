@@ -6,6 +6,7 @@ import (
 
 	"github.com/ppxb/miyabi/internal/domain"
 	"github.com/ppxb/miyabi/internal/ent"
+	"github.com/ppxb/miyabi/internal/ent/task"
 	"github.com/ppxb/miyabi/internal/library"
 	"github.com/ppxb/miyabi/internal/monitor"
 	"github.com/ppxb/miyabi/internal/syncx"
@@ -58,6 +59,7 @@ func (v *taskViews) list(ctx context.Context) ([]domain.TaskInfo, error) {
 	if err != nil {
 		return nil, err
 	}
+	scans = slices.DeleteFunc(scans, func(info domain.TaskInfo) bool { return info.Rebuild || info.MovieID != 0 })
 	result := append(scans, batches...)
 	slices.SortFunc(result, func(a, b domain.TaskInfo) int {
 		aActive := a.Status == "queued" || a.Status == "running"
@@ -87,6 +89,13 @@ func (v *taskViews) Retry(ctx context.Context, id int) (domain.TaskInfo, error) 
 	}
 	switch tasks.Kind(record.Type) {
 	case tasks.KindScan:
+		input, err := tasks.DecodePayload[domain.ScanPayload](record.Payload)
+		if err != nil {
+			return domain.TaskInfo{}, err
+		}
+		if input.Rebuild || input.MovieID != 0 || record.Status != task.StatusFailed {
+			return domain.TaskInfo{}, domain.E(domain.KindInvalid, "该任务不支持重试", nil)
+		}
 		return v.library.RetryTask(ctx, id)
 	case tasks.KindSubscriptionBatch:
 		return v.monitor.RetryTask(ctx, id)

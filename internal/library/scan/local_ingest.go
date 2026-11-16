@@ -13,10 +13,8 @@ import (
 	"github.com/ppxb/miyabi/internal/domain"
 	"github.com/ppxb/miyabi/internal/ent"
 	"github.com/ppxb/miyabi/internal/ent/file"
-	"github.com/ppxb/miyabi/internal/ent/movie"
 	"github.com/ppxb/miyabi/internal/export"
 	mediaimage "github.com/ppxb/miyabi/internal/image"
-	"github.com/ppxb/miyabi/internal/library/scrape"
 	"github.com/ppxb/miyabi/internal/nfo"
 )
 
@@ -159,11 +157,10 @@ func (s *LocalScanner) ingestBatch(ctx context.Context, rootDir string, batch []
 				matcher.add(record)
 				added++
 			}
-			// An old exported NFO does not mean a failed refresh has recovered.
-			if media.document != nil && record.ScrapeStatus != movie.ScrapeStatusFailed {
-				nfoRead++
-				var current *ent.Movie
-				if err := scrape.SaveMovieMetadata(ctx, tx, record.ID, *media.document); err != nil {
+			// External NFOs can replace metadata left by a failed legacy scraper.
+			if media.document != nil {
+				current, err := importMovieNFO(ctx, tx, record, *media.document)
+				if err != nil {
 					slog.WarnContext(ctx, "failed to save movie metadata from local NFO", "path", media.nfoPath, "error", err)
 					// Even a rejected NFO may have changed fields before a later write failed.
 					current, err = tx.Movie.Get(ctx, record.ID)
@@ -171,10 +168,7 @@ func (s *LocalScanner) ingestBatch(ctx context.Context, rootDir string, batch []
 						return err
 					}
 				} else {
-					current, err = tx.Movie.UpdateOneID(record.ID).SetScrapeStatus(movie.ScrapeStatusDone).Save(ctx)
-					if err != nil {
-						return err
-					}
+					nfoRead++
 				}
 				matcher.remove(record)
 				matcher.add(current)

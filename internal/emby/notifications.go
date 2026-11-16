@@ -109,7 +109,7 @@ func (s *Service) flushNotifications(ctx context.Context) {
 	}
 	if err != nil {
 		slog.WarnContext(ctx, "Emby notification failed; retained for retry", "count", len(valid), "error", err)
-	} else {
+	} else if s.actors != nil {
 		s.actors.schedule(25 * time.Second)
 	}
 }

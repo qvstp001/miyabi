@@ -27,9 +27,12 @@ type ViewedManager interface {
 }
 
 type discoverSearchQuery struct {
-	Query string `form:"q" binding:"required"`
-	Page  int    `form:"page,default=1" binding:"min=1"`
-	Limit int    `form:"limit,default=20" binding:"min=1,max=100"`
+	Zone   string `form:"zone" binding:"omitempty,oneof=all censored uncensored western fc2 anime"`
+	Sort   string `form:"sort" binding:"omitempty,oneof=release score"`
+	Filter string `form:"filter" binding:"omitempty,oneof=magnets subtitle can_play"`
+	Query  string `form:"q" binding:"required"`
+	Page   int    `form:"page,default=1" binding:"min=1"`
+	Limit  int    `form:"limit,default=20" binding:"min=1,max=100"`
 }
 
 type discoverBrowseQuery struct {
@@ -38,7 +41,7 @@ type discoverBrowseQuery struct {
 	EntityID   string   `form:"entity_id" binding:"required_with=EntityType"`
 	Main       []string `form:"main" binding:"omitempty,dive,oneof=p m c s i v"`
 	TagIDs     []string `form:"tag_id" binding:"excluded_with=EntityType,omitempty,dive,required"`
-	Year       string   `form:"year" binding:"excluded_with=EntityType,omitempty,len=4,numeric"`
+	Year       string   `form:"year" binding:"excluded_with=EntityType,required_with=Month,omitempty,len=4,numeric"`
 	Month      string   `form:"month" binding:"excluded_with=EntityType,omitempty,oneof=1 2 3 4 5 6 7 8 9 10 11 12"`
 	Sort       string   `form:"sort,default=hit" binding:"oneof=hit release score update want_watch_count watched_count"`
 	Order      string   `form:"order,default=desc" binding:"oneof=asc desc"`
@@ -80,8 +83,11 @@ func discoverSearchHandler(discover CatalogueManager) gin.HandlerFunc {
 			return
 		}
 		movies, err := discover.Search(c.Request.Context(), query.Query, domain.SearchOptions{
-			Page:  query.Page,
-			Limit: query.Limit,
+			Zone:     domain.Zone(query.Zone),
+			Sort:     query.Sort,
+			FilterBy: query.Filter,
+			Page:     query.Page,
+			Limit:    query.Limit,
 		})
 		respond(c, movies, err)
 	}

@@ -19,6 +19,7 @@ function containsMovieCards(key: readonly unknown[], id: string) {
     key[0] === 'discover' &&
     (key[1] === 'movies' ||
       key[1] === 'search' ||
+      (key[1] === 'explore' && key[2] === 'feed') ||
       (key[1] === 'movie' && key.length === 3 && key[2] === id))
   )
 }
@@ -33,7 +34,9 @@ export function findCachedMovieCard(client: QueryClient, id: string, freshOnly =
     const card =
       query.queryKey[1] === 'movie'
         ? (data as DiscoverMovieDetail | undefined)
-        : (data as DiscoverMovie[] | undefined)?.find(item => item.id === id)
+        : (query.queryKey[1] === 'explore'
+            ? (data as { items: DiscoverMovie[] } | undefined)?.items
+            : data as DiscoverMovie[] | undefined)?.find(item => item.id === id)
     if (card && (!newest || dataUpdatedAt >= newest.updatedAt)) {
       newest = { card, updatedAt: dataUpdatedAt, invalidated: isInvalidated }
     }

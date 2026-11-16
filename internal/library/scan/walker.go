@@ -64,7 +64,8 @@ func (s *Scanner) SetMediaNotifier(notifier export.MediaNotifier) {
 }
 
 // Run executes a library scan job: it walks the media directories, matches NFOs
-// and videos, indexes movies and files, and enqueues metadata scraping.
+// and videos, indexes movies and files, and exports playback links.
+// Metadata scraping is reserved for explicit rebuild requests.
 func (s *Scanner) Run(ctx context.Context, job tasks.Job) error {
 	payload, err := tasks.DecodePayload[domain.ScanPayload](job.Payload)
 	if err != nil {
@@ -131,8 +132,7 @@ func (r *scanRun) savePage(ctx context.Context, directoryPath string, videos []V
 }
 
 func (r *scanRun) reconcile(ctx context.Context) error {
-	// Cover jobs acquire artwork protection before export configuration and
-	// source protection; keep the same order while restoring cached exports.
+	// Keep the same lock order as manual scraping while updating shared exports.
 	if r.scanner.images != nil {
 		if err := r.scanner.images.LockArtwork(ctx); err != nil {
 			return err

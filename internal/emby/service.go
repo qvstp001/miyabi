@@ -73,7 +73,9 @@ func NewService(ctx context.Context, db *ent.Client, initial Config, deps Depend
 		exportMgr:         deps.ExportManager,
 		scheduleLocalScan: deps.ScheduleLocalScan,
 	}
-	s.actors = newActorSync(db, s.client, s.currentConfig, deps.GFriends, deps.Media)
+	if deps.GFriends != nil || deps.Media != nil {
+		s.actors = newActorSync(db, s.client, s.currentConfig, deps.GFriends, deps.Media)
+	}
 	if s.exportMgr != nil {
 		cfgExport := s.exportMgr.Config()
 		cfgExport.EmbyDir, cfgExport.PublicURL = cfg.LocalDir, cfg.PublicURL
@@ -83,7 +85,7 @@ func NewService(ctx context.Context, db *ent.Client, initial Config, deps Depend
 	s.wg.Add(1)
 	go s.worker(subCtx)
 
-	if s.cfg.Enabled && s.cfg.IsSyncActors() {
+	if s.actors != nil && s.cfg.Enabled && s.cfg.IsSyncActors() {
 		s.actors.schedule(10 * time.Second)
 	}
 
@@ -93,7 +95,9 @@ func NewService(ctx context.Context, db *ent.Client, initial Config, deps Depend
 // Close makes a final delivery attempt; outstanding updates remain in the database.
 func (s *Service) Close() {
 	s.cancel()
-	s.actors.close()
+	if s.actors != nil {
+		s.actors.close()
+	}
 	s.wg.Wait()
 }
 
@@ -138,7 +142,9 @@ func (s *Service) UpdateConfig(ctx context.Context, cfg Config) error {
 	s.cfg = cfg
 	exportMgr := s.exportMgr
 	s.mu.Unlock()
-	s.actors.reconfigure()
+	if s.actors != nil {
+		s.actors.reconfigure()
+	}
 
 	if exportMgr != nil && cfg.LocalDir != "" {
 		exportMgr.Set(export.Config{
@@ -151,7 +157,7 @@ func (s *Service) UpdateConfig(ctx context.Context, cfg Config) error {
 		s.startSTRMRewrite(exportMgr)
 	}
 
-	if cfg.Enabled && cfg.IsSyncActors() {
+	if s.actors != nil && cfg.Enabled && cfg.IsSyncActors() {
 		s.actors.schedule(2 * time.Second)
 	}
 

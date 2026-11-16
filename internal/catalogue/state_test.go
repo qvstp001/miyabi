@@ -122,3 +122,12 @@ func TestMovieStatesDifferentAccountOrDirectoryIgnored(t *testing.T) {
 		}
 	}
 }
+
+func TestLocalMovieStatesWorkWithoutMounted115Source(t *testing.T) {
+	id := "local-movie"
+	service := &Service{local: &stubLocalState{movies: []domain.LocalMovie{{ID: 42, Code: "ABP-001", JavDBID: &id}}}}
+	states, err := service.MovieStates(t.Context(), []MovieIdentity{{ID: id, Code: "ABP-001"}})
+	if err != nil || len(states) != 1 || states[0].State != MovieInLibrary || states[0].LibraryID != 42 {
+		t.Fatalf("local movie was hidden: %+v, %v", states, err)
+	}
+}

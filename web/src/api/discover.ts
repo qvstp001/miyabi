@@ -48,6 +48,7 @@ export type NamedEntity = {
 }
 
 export type DiscoverMovie = {
+  readonly ranking?: number
   readonly rating_source?: string
   readonly rating_max?: number
   id: string
@@ -114,6 +115,9 @@ export type BrowseMoviesParams = {
 
 export type SearchMoviesParams = {
   query: string
+  zone?: JavDBZone
+  sort?: 'release' | 'score'
+  filter?: 'magnets' | 'subtitle' | 'can_play'
   page?: number
   limit?: number
 }
@@ -207,6 +211,9 @@ export function useSearchMovies(params: SearchMoviesParams) {
         '/api/discover/search',
         {
           q: query,
+          zone: params.zone,
+          sort: params.sort,
+          filter: params.filter,
           page: params.page,
           limit: params.limit
         },
@@ -219,9 +226,10 @@ export function useSearchMovies(params: SearchMoviesParams) {
   })
 }
 
-export function useDiscoverTags(zone: JavDBZone) {
+export function useDiscoverTags(zone: JavDBZone, enabled = true) {
   return useQuery({
     queryKey: discoverKeys.tags(zone),
+    enabled,
     queryFn: ({ signal }) => apiGet<TagCategory[]>('/api/discover/tags', { zone }, signal),
     staleTime: 24 * 60 * 60_000
   })

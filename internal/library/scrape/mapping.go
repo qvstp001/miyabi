@@ -65,7 +65,7 @@ func DetailNFO(detail domain.MovieDetail) nfo.Movie {
 // MovieNFO reads the complete document saved by scraping or NFO import.
 func MovieNFO(record *ent.Movie) (nfo.Movie, error) {
 	if record.Metadata == nil {
-		return nfo.Movie{}, domain.E(domain.KindInvalid, "影片资料缺失，请重新刮削", nil)
+		return nfo.Movie{}, domain.E(domain.KindInvalid, "影片资料缺失，请检查外部 NFO 文件", nil)
 	}
 	return *record.Metadata, nil
 }

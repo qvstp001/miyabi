@@ -12,8 +12,6 @@ export function ScanProgressView({ task }: { task: ScanTask }) {
   const connection = useTaskConnection()
   const active = isTaskActive(task)
   const disconnected = active && connection.status === 'disconnected'
-  const scan = task.scan
-  const metadata = scan.metadata_total > 0
   const status = disconnected
     ? '进度已断开'
     : active && connection.status === 'connecting'
@@ -21,7 +19,7 @@ export function ScanProgressView({ task }: { task: ScanTask }) {
       : scanStatus(task)
   const count = scanCount(task)
   const summary = `${status}，${count}`
-  const value = active && !task.paused && !metadata && !disconnected ? null : task.progress
+  const value = active && !task.paused && !disconnected ? null : task.progress
 
   return (
     <div className="min-w-0 flex-1 space-y-2">

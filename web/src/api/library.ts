@@ -2,7 +2,6 @@ import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tansta
 
 import { apiGet, apiPost } from '@/api/client'
 import type { DiscoverMovieDetail } from '@/api/discover'
-import { movieStateKeys } from '@/api/movie-states'
 import { refreshQueries } from '@/api/query-refresh'
 import { panKeys, type PanAccountStatus } from '@/api/pan'
 import { taskKeys, type LibrarySource, type ScanTask, type Task } from '@/api/tasks'
@@ -32,6 +31,7 @@ export type LibraryMovie = {
 
 type LibraryPage = {
   source?: LibrarySource
+  local_source?: LibrarySource
   movies: LibraryMovie[]
   total: number
   page: number
@@ -68,24 +68,11 @@ export function useLibraryMovies(page: number) {
 export function useStartLibraryScan() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (rebuild: boolean) =>
-      apiPost<ScanTask>(rebuild ? '/api/library/rebuild' : '/api/library/scan'),
+    mutationFn: () => apiPost<ScanTask>('/api/library/scan'),
     onMutate: () => queryClient.getQueryData<Task[]>(taskKeys.all),
-    onSuccess: (task, _rebuild, previous) => {
+    onSuccess: (task, _variables, previous) => {
       cacheScanTask(queryClient, task, previous)
       return refreshQueries(queryClient, taskKeys.all)
-    }
-  })
-}
-
-export function useRescrapeLibraryMovie(id: number) {
-  const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: (code?: string) => apiPost<ScanTask>(`/api/library/movies/${id}/scrape`, { code }),
-    onMutate: () => queryClient.getQueryData<Task[]>(taskKeys.all),
-    onSuccess: (task, _code, previous) => {
-      cacheScanTask(queryClient, task, previous)
-      return refreshQueries(queryClient, libraryKeys.all, taskKeys.all, movieStateKeys.all)
     }
   })
 }
@@ -93,6 +80,7 @@ export function useRescrapeLibraryMovie(id: number) {
 function cacheScanTask(queryClient: QueryClient, task: ScanTask, previous: Task[] | undefined) {
   const account = queryClient.getQueryData<PanAccountStatus>(panKeys.account)
   if (
+    task.source.account_id !== 'local' &&
     account &&
     (!account.connected ||
       account.account?.id !== task.source.account_id ||

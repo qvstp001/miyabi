@@ -16,7 +16,7 @@ type Config struct {
 	APIKey     string `json:"api_key"`
 	MediaPath  string `json:"media_path"`
 	LocalDir   string `json:"local_dir"`
-	SyncActors *bool  `json:"sync_actors,omitempty"`
+	SyncActors *bool  `json:"-"`
 	PublicURL  string `json:"public_url,omitempty"`
 }
 

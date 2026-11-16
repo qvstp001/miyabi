@@ -25,7 +25,6 @@ type Config struct {
 	EmbyServerURL  string
 	EmbyAPIKey     string
 	EmbyMediaPath  string
-	EmbySyncActors bool
 	TrustedProxies []string
 }
 
@@ -56,8 +55,6 @@ func Load() (Config, error) {
 	if embyEnabledStr == "" && (embyServerURL != "" || embyAPIKey != "") {
 		embyEnabled = true
 	}
-	embySyncActorsStr := strings.ToLower(strings.TrimSpace(os.Getenv("MIYABI_EMBY_SYNC_ACTORS")))
-	embySyncActors := embySyncActorsStr != "false" && embySyncActorsStr != "0"
 
 	var trustedProxies []string
 	if rawProxies := strings.TrimSpace(os.Getenv("MIYABI_TRUSTED_PROXIES")); rawProxies != "" {
@@ -81,7 +78,6 @@ func Load() (Config, error) {
 		EmbyServerURL:  embyServerURL,
 		EmbyAPIKey:     embyAPIKey,
 		EmbyMediaPath:  embyMediaPath,
-		EmbySyncActors: embySyncActors,
 		TrustedProxies: trustedProxies,
 	}
 	if err := cfg.validate(); err != nil {

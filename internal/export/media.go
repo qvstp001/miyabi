@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/ppxb/miyabi/internal/atomicfile"
@@ -28,23 +29,10 @@ func WriteMedia(cfg Config, code string, doc nfo.Movie, videos []pan.File, poste
 	}
 	changed := false
 	write := func(name string, body []byte) error {
-		path := filepath.Join(destDir, name)
-		before, err := os.ReadFile(path)
-		if err == nil && bytes.Equal(before, body) {
-			return nil
-		}
-		if err != nil && !os.IsNotExist(err) {
-			return err
-		}
-		if err := atomicfile.WriteFile(path, body, 0o644); err != nil {
-			return err
-		}
-		changed = true
-		return nil
+		updated, err := writeMediaFile(filepath.Join(destDir, name), body)
+		changed = changed || updated
+		return err
 	}
-
-	// Ensure videos are sorted deterministically
-	sortFiles(videos)
 
 	// 1. Write poster and fanart FIRST
 	posterName, fanartName := "poster.jpg", "fanart.jpg"
@@ -71,7 +59,28 @@ func WriteMedia(cfg Config, code string, doc nfo.Movie, videos []pan.File, poste
 		return changed, fmt.Errorf("write nfo file: %w", err)
 	}
 
-	// 3. Write STRM files LAST so media servers (Emby) watching via inotify detect complete assets
+	// Publish streams last, after the explicitly requested metadata is complete.
+	streamsChanged, err := WriteSTRM(cfg, code, videos)
+	return changed || streamsChanged, err
+}
+
+// WriteSTRM updates playback links without creating or changing NFO, artwork or subtitles.
+func WriteSTRM(cfg Config, code string, videos []pan.File) (bool, error) {
+	if err := cfg.Validate(); err != nil {
+		return false, err
+	}
+	stem := nfo.FileStem(code)
+	destDir := EmbyMovieDir(cfg.EmbyDir, code)
+	if err := os.MkdirAll(destDir, 0o755); err != nil {
+		return false, fmt.Errorf("create emby directory %s: %w", destDir, err)
+	}
+	changed := false
+	write := func(name string, body []byte) error {
+		updated, err := writeMediaFile(filepath.Join(destDir, name), body)
+		changed = changed || updated
+		return err
+	}
+	sortFiles(videos)
 	expectedSTRMs := make(map[string]bool)
 	if len(videos) == 1 {
 		strmName := stem + ".strm"
@@ -99,7 +108,7 @@ func WriteMedia(cfg Config, code string, doc nfo.Movie, videos []pan.File, poste
 			continue
 		}
 		name := entry.Name()
-		if strings.HasSuffix(name, ".strm") && strings.HasPrefix(name, stem) && !expectedSTRMs[name] {
+		if managedSTRMName(name, stem) && !expectedSTRMs[name] {
 			if err := os.Remove(filepath.Join(destDir, name)); err != nil {
 				return changed, err
 			}
@@ -108,6 +117,33 @@ func WriteMedia(cfg Config, code string, doc nfo.Movie, videos []pan.File, poste
 	}
 
 	return changed, nil
+}
+
+// Only names emitted by WriteSTRM belong to its stale-part cleanup.
+func managedSTRMName(name, stem string) bool {
+	if name == stem+".strm" {
+		return true
+	}
+	part, found := strings.CutPrefix(name, stem+"-cd")
+	if !found || !strings.HasSuffix(part, ".strm") {
+		return false
+	}
+	index, err := strconv.Atoi(strings.TrimSuffix(part, ".strm"))
+	return err == nil && index > 0 && part == strconv.Itoa(index)+".strm"
+}
+
+func writeMediaFile(path string, body []byte) (bool, error) {
+	before, err := os.ReadFile(path)
+	if err == nil && bytes.Equal(before, body) {
+		return false, nil
+	}
+	if err != nil && !os.IsNotExist(err) {
+		return false, err
+	}
+	if err := atomicfile.WriteFile(path, body, 0o644); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // naturalCompare compares two strings using natural numeric order (e.g. "cd2" < "cd10").

@@ -14,7 +14,7 @@ import (
 	"github.com/ppxb/miyabi/internal/tasks"
 )
 
-func TestTaskPoolsIsolateScanningScrapingAndBatches(t *testing.T) {
+func TestTaskPoolsRunScansAndBatchesWithoutScraping(t *testing.T) {
 	ctx := t.Context()
 	store, err := database.Open(ctx, t.TempDir())
 	if err != nil {
@@ -62,7 +62,7 @@ func TestTaskPoolsIsolateScanningScrapingAndBatches(t *testing.T) {
 	jobs[5].Update().SetStatus(task.StatusRunning).ExecX(ctx)
 	start := func() (context.CancelFunc, <-chan error) {
 		runCtx, cancel := context.WithCancel(ctx)
-		stopped := make(chan error, 3)
+		stopped := make(chan error, 2)
 		for _, pool := range newTaskPools(service, logger) {
 			go func() { stopped <- pool.Run(runCtx) }()
 		}
@@ -70,7 +70,7 @@ func TestTaskPoolsIsolateScanningScrapingAndBatches(t *testing.T) {
 	}
 	stop := func(cancel context.CancelFunc, stopped <-chan error) {
 		cancel()
-		for range 3 {
+		for range 2 {
 			if err := awaitPan(t, stopped); err != nil {
 				t.Error(err)
 			}
@@ -79,19 +79,19 @@ func TestTaskPoolsIsolateScanningScrapingAndBatches(t *testing.T) {
 	cancel, stopped := start()
 	t.Cleanup(cancel)
 	seen := make(map[int]bool)
-	for range 4 {
+	for range 2 {
 		job := awaitPan(t, started)
 		seen[job.ID] = true
 		if string(job.Payload) != string(body) {
 			t.Fatal("recovery discarded checkpoint")
 		}
 	}
-	for _, i := range []int{0, 1, 3, 5} {
+	for _, i := range []int{3, 5} {
 		if !seen[jobs[i].ID] {
 			t.Fatalf("task %d starved", jobs[i].ID)
 		}
 	}
-	for _, i := range []int{2, 4, 6} {
+	for _, i := range []int{1, 2, 4, 6} {
 		if store.Client.Task.GetX(ctx, jobs[i].ID).Status != task.StatusQueued {
 			t.Fatal("pool exceeded concurrency")
 		}
@@ -105,19 +105,19 @@ func TestTaskPoolsIsolateScanningScrapingAndBatches(t *testing.T) {
 	close(gate)
 	cancel, stopped = start()
 	t.Cleanup(cancel)
-	for range len(jobs) {
+	for range len(jobs) - 3 {
 		awaitPan(t, started)
 	}
 	awaitPanCondition(t, func() bool {
 		// Notifications are published after the completion transaction commits.
-		return store.Client.Task.Query().Where(task.StatusEQ(task.StatusDone)).CountX(ctx) == len(jobs) &&
-			service.Revisions().Library >= uint64(len(jobs))
+		return store.Client.Task.Query().Where(task.StatusEQ(task.StatusDone)).CountX(ctx) == len(jobs)-3 &&
+			service.Revisions().Library >= uint64(len(jobs)-3)
 	})
-	if service.Revisions().Library != uint64(len(jobs)) || exceeded.Load() {
+	if service.Revisions().Library != uint64(len(jobs)-3) || exceeded.Load() {
 		t.Fatal("duplicate completions or excess concurrency")
 	}
 	// Wake all idle pool kinds through the shared bus.
-	for _, kind := range []tasks.Kind{tasks.KindScan, tasks.KindScrape, tasks.KindSubscriptionBatch} {
+	for _, kind := range []tasks.Kind{tasks.KindScan, tasks.KindSubscriptionBatch} {
 		job := store.Client.Task.Create().SetType(string(kind)).SaveX(ctx)
 		service.WakePool()
 		if got := awaitPan(t, started); got.ID != job.ID {
@@ -126,4 +126,7 @@ func TestTaskPoolsIsolateScanningScrapingAndBatches(t *testing.T) {
 		awaitPanCondition(t, func() bool { return store.Client.Task.GetX(ctx, job.ID).Status == task.StatusDone })
 	}
 	stop(cancel, stopped)
+	if scrapes.Load() != 0 || store.Client.Task.GetX(ctx, jobs[0].ID).Status != task.StatusRunning {
+		t.Fatal("legacy scraping work was executed")
+	}
 }

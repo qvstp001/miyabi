@@ -95,6 +95,29 @@ func (r *scanRun) processPageTx(ctx context.Context, tx *ent.Tx, directoryPath s
 			}
 			maps.Copy(codes, indexed)
 		}
+		imported := make(map[int]bool)
+		for _, video := range videos {
+			id := codes[video.Code]
+			if id == 0 || imported[id] || video.Document == nil || video.Manual {
+				continue
+			}
+			record, err := tx.Movie.Get(ctx, id)
+			if err != nil {
+				return err
+			}
+			doc := *video.Document
+			if !codeid.IsEquivalent(doc.Code, record.Code) {
+				continue
+			}
+			if r.payload.OfflineTaskID != 0 && doc.JavDBID() != "" && doc.JavDBID() != r.payload.JavDBID {
+				return domain.E(domain.KindConflict, "NFO 的 JavDB ID 与下载影片不一致", nil)
+			}
+			doc.Code = record.Code
+			if _, err := importMovieNFO(ctx, tx, record, doc); err != nil {
+				return fmt.Errorf("import NFO for %s: %w", record.Code, err)
+			}
+			imported[id], indexChanged = true, true
+		}
 		builders := make([]*ent.FileCreate, 0, len(videos))
 		var unchanged []string
 		var previousMovies []int

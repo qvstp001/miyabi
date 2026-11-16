@@ -28,7 +28,7 @@ export function MovieHero({
             </Badge>
             {libraryStatus ? (
               <Badge variant={libraryStatus === 'done' ? 'library' : 'secondary'}>
-                {{ done: '已入库', pending: '待刮削', failed: '刮削失败' }[libraryStatus]}
+                {{ done: '已入库', pending: '已索引', failed: '已索引' }[libraryStatus]}
               </Badge>
             ) : (
               <MovieStateBadge movie={movie} hideViewed />

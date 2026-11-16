@@ -7,8 +7,6 @@ const stages: { id: TaskStage; label: string }[] = [
   { id: 'downloading', label: '正在下载' },
   { id: 'scanning', label: '正在扫描文件' },
   { id: 'reconciling', label: '正在核对媒体库' },
-  { id: 'scraping', label: '正在刮削元数据' },
-  { id: 'artwork', label: '正在写回元数据' },
   { id: 'done', label: '处理完成' }
 ]
 
@@ -20,14 +18,8 @@ export function taskProgressState(current: TaskStage, offline = false, progress 
   if (!active) return { label: '等待进度同步', value: null }
 
   const percent = Number.isFinite(progress) ? clamp(progress, 0, 100) : 0
-  // Metadata and artwork interleave for each movie. Their shared interval uses
-  // the completed-movie count, so starting the next movie cannot move it back.
-  const metadata = stage === 'scraping' || stage === 'artwork'
-  const start = stage === 'artwork' ? index - 1 : index
   const value =
-    stage === 'done'
-      ? 100
-      : ((start + (percent / 100) * (metadata ? 2 : 1)) / (visible.length - 1)) * 100
+    stage === 'done' ? 100 : ((index + percent / 100) * 100) / (visible.length - 1)
   const label =
     current === 'locating'
       ? '已下载，等待 115 返回文件信息'

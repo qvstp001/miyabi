@@ -41,8 +41,14 @@ func (service *Service) TestJavDBLogin(ctx context.Context, cfg javdb.Config) (j
 	if !cfg.Configured() {
 		return javdb.LoginInfo{}, domain.E(domain.KindInvalid, "请填写 JavDB 用户名和密码", nil)
 	}
+	service.accountMu.Lock()
+	defer service.accountMu.Unlock()
 	if service.javdbAccount == nil {
 		return javdb.LoginInfo{}, domain.E(domain.KindInvalid, "JavDB 客户端不可用", nil)
+	}
+	if cfg != service.javdbConfig {
+		// Testing an unsaved account must not replace the account used by personal lists.
+		defer service.javdbAccount.SetCredentials(service.javdbConfig.Username, service.javdbConfig.Password)
 	}
 	return service.javdbAccount.Login(ctx, cfg.Username, cfg.Password)
 }

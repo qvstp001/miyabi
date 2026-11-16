@@ -4,14 +4,12 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { toast } from 'sonner'
 import { beforeEach, expect, onTestFinished, test, vi } from 'vitest'
 
-import { useRescrapeLibraryMovie, useStartLibraryScan } from '@/api/library'
+import { useStartLibraryScan } from '@/api/library'
 import { taskKeys, type ScanTask } from '@/api/tasks'
-import { LibraryMovieActions } from '@/features/library/movie-actions'
 import { LibraryScanButton } from '@/features/library/scan-button'
 import { notifyScanTask } from '@/features/tasks/task-toast'
 
 vi.mock('@/api/library', () => ({
-  useRescrapeLibraryMovie: vi.fn(),
   useStartLibraryScan: vi.fn()
 }))
 vi.mock('sonner', () => ({
@@ -23,16 +21,13 @@ beforeEach(() => vi.clearAllMocks())
 const queued: ScanTask = {
   id: 254,
   type: 'scan',
-  movie_id: 48,
-  code: 'PFES-093CH',
-  rebuild: true,
   status: 'queued',
   progress: 0,
   created_at: '',
   updated_at: '',
   source: { account_id: 'acc1', directory: { id: 'dir1', name: 'Movies', path: '/Movies' } },
   scan: {
-    stage: 'scraping',
+    stage: 'queued',
     current_path: '/Movies',
     directories_discovered: 0,
     directories_scanned: 0,
@@ -55,42 +50,23 @@ function elements(node: ReactNode): ReactElement<Record<string, unknown>>[] {
   })
 }
 
-function submission(action: 'rescrape' | 'scan' | 'rebuild') {
+function submission() {
   const client = new QueryClient()
   onTestFinished(() => client.clear())
   const mutate = vi.fn()
-  vi.mocked(useRescrapeLibraryMovie).mockReturnValue({
-    mutate,
-    isPending: false
-  } as unknown as ReturnType<typeof useRescrapeLibraryMovie>)
   vi.mocked(useStartLibraryScan).mockReturnValue({
     mutate,
     isPending: false
   } as unknown as ReturnType<typeof useStartLibraryScan>)
   let tree: ReactNode
   function Capture() {
-    tree =
-      action === 'rescrape'
-        ? LibraryMovieActions({
-            movie: {
-              id: 48,
-              code: queued.code!,
-              title: '',
-              duration: 0,
-              rating: 0,
-              actors: [],
-              tags: [],
-              scrape_status: 'failed'
-            }
-          })
-        : LibraryScanButton({
-            loading: false,
-            available: true,
-            scanning: false,
-            rebuilding: false,
-            connected: true,
-            onStarted: vi.fn()
-          })
+    tree = LibraryScanButton({
+      loading: false,
+      available: true,
+      scanning: false,
+      connected: true,
+      onStarted: vi.fn()
+    })
     return null
   }
   renderToStaticMarkup(
@@ -98,22 +74,22 @@ function submission(action: 'rescrape' | 'scan' | 'rebuild') {
       <Capture />
     </QueryClientProvider>
   )
-  const event = action === 'rescrape' ? 'onSelect' : 'onClick'
+  const event = 'onClick'
   const controls = elements(tree).filter(element => typeof element.props[event] === 'function')
-  ;(controls[action === 'rebuild' ? 1 : 0]!.props[event] as () => void)()
+  ;(controls[0]!.props[event] as () => void)()
   const callbacks = mutate.mock.calls[0]![1] as { onSuccess: (task: ScanTask) => void }
   return { client, complete: () => callbacks.onSuccess(queued) }
 }
 
-for (const action of ['rescrape', 'scan', 'rebuild'] as const) {
+for (const action of ['scan'] as const) {
   for (const status of ['done', 'failed'] as const) {
     test(`${action}: a late submission callback preserves the latest ${status} notification`, () => {
-      const f = submission(action)
+      const f = submission()
       const latest: ScanTask = {
         ...queued,
         status,
         progress: 100,
-        error: status === 'failed' ? 'No matching metadata' : undefined,
+        error: status === 'failed' ? 'Scan failed' : undefined,
         can_retry: status === 'failed',
         scan: {
           ...queued.scan,
@@ -138,7 +114,7 @@ for (const action of ['rescrape', 'scan', 'rebuild'] as const) {
   }
 
   test(`${action}: a new task still has immediate feedback before its snapshot arrives`, () => {
-    const f = submission(action)
+    const f = submission()
     f.complete()
     expect(toast.info).toHaveBeenCalledOnce()
     expect(vi.mocked(toast.info).mock.calls[0]![1]).toMatchObject({

@@ -17,8 +17,9 @@ import (
 type Dependencies struct {
 	Logger         *slog.Logger
 	Access         AccessGate
+	Explore        CatalogueExplorer
 	Catalogue      CatalogueManager
-	Metadata       MetadataManager
+	Media          ImageReader
 	Drive          DriveManager
 	Offline        OfflineManager
 	Monitor        SubscriptionManager
@@ -75,8 +76,6 @@ func NewRouter(deps Dependencies) *gin.Engine {
 	protected := api.Group("", authMiddleware(deps.Access))
 
 	settingsAPI := protected.Group("/settings", noStore())
-	settingsAPI.GET("/scraping", metadataSettingsHandler(deps.Metadata))
-	settingsAPI.PUT("/scraping", metadataUpdateHandler(deps.Metadata))
 	settingsAPI.GET("/system", dataInfoHandler(deps.Maintenance))
 	settingsAPI.DELETE("/cache", dataClearCacheHandler(deps.Maintenance))
 	settingsAPI.GET("/network", networkHandler(deps.Network))
@@ -93,10 +92,8 @@ func NewRouter(deps Dependencies) *gin.Engine {
 
 	protected.GET("/library/movies", libraryMoviesHandler(deps.Library))
 	protected.GET("/library/movies/:id", libraryMovieHandler(deps.Library))
-	protected.POST("/library/movies/:id/scrape", libraryMovieScrapeHandler(deps.Library))
-	protected.GET("/library/movies/:id/previews/:index", libraryPreviewHandler(deps.Library, deps.Metadata))
+	protected.GET("/library/movies/:id/previews/:index", libraryPreviewHandler(deps.Library, deps.Media))
 	protected.POST("/library/scan", libraryScanHandler(deps.Library, deps.Emby))
-	protected.POST("/library/rebuild", libraryRebuildHandler(deps.Library))
 	protected.GET("/library/artwork/:key", libraryArtworkHandler(deps.Artwork))
 
 	protected.GET("/tasks", noStore(), tasksHandler(deps.Tasks))
@@ -117,6 +114,10 @@ func NewRouter(deps Dependencies) *gin.Engine {
 	subscriptionsAPI.POST("/enqueue", subscriptionEnqueueBatchHandler(deps.Monitor))
 	subscriptionsAPI.GET("/actors/feed", subscriptionActorFeedHandler(deps.Monitor))
 	subscriptionsAPI.GET("/actors/:id/feed", subscriptionActorFeedHandler(deps.Monitor))
+
+	if deps.Explore != nil {
+		installExploreRoutes(protected, deps.Explore)
+	}
 
 	protected.GET("/discover/movies", discoverBrowseHandler(deps.Catalogue))
 	protected.POST("/discover/movie-states", noStore(), discoverMovieStatesHandler(deps.Catalogue))

@@ -4,13 +4,15 @@ import { MovieGridLayout } from './movie-grid-layout'
 
 export function MovieGridSkeleton({
   count = 8,
-  compact = false
+  compact = false,
+  density
 }: {
   count?: number
   compact?: boolean
+  density?: 'comfortable' | 'compact'
 }) {
   return (
-    <MovieGridLayout>
+    <MovieGridLayout density={density}>
       {Array.from({ length: count }, (_, index) => (
         <MovieCardSkeleton key={index} compact={compact} />
       ))}

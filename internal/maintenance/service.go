@@ -34,15 +34,15 @@ type Service struct {
 	directory string
 	db        *ent.Client
 	images    *mediaimage.Cache
-	scrape    ArtworkLocker
+	artwork   ArtworkLocker
 }
 
-func New(directory string, db *ent.Client, images *mediaimage.Cache, scrapeSvc ArtworkLocker) (*Service, error) {
+func New(directory string, db *ent.Client, images *mediaimage.Cache, artwork ArtworkLocker) (*Service, error) {
 	absolute, err := filepath.Abs(directory)
 	if err != nil {
 		return nil, fmt.Errorf("resolve data directory: %w", err)
 	}
-	return &Service{directory: absolute, db: db, images: images, scrape: scrapeSvc}, nil
+	return &Service{directory: absolute, db: db, images: images, artwork: artwork}, nil
 }
 
 func (service *Service) Info(ctx context.Context) (Info, error) {
@@ -57,10 +57,10 @@ func (service *Service) ClearCache(ctx context.Context) (Info, error) {
 	if err := ctx.Err(); err != nil {
 		return Info{}, err
 	}
-	if !service.scrape.TryLockArtwork() {
+	if !service.artwork.TryLockArtwork() {
 		return Info{}, ErrCacheBusy
 	}
-	defer service.scrape.UnlockArtwork()
+	defer service.artwork.UnlockArtwork()
 
 	retained, err := service.retainedArtwork(ctx)
 	if err != nil {

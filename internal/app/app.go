@@ -19,20 +19,16 @@ import (
 	"github.com/ppxb/miyabi/internal/drive"
 	"github.com/ppxb/miyabi/internal/emby"
 	"github.com/ppxb/miyabi/internal/export"
-	"github.com/ppxb/miyabi/internal/gfriends"
 	mediaimage "github.com/ppxb/miyabi/internal/image"
 	"github.com/ppxb/miyabi/internal/javbus"
 	"github.com/ppxb/miyabi/internal/library"
-	"github.com/ppxb/miyabi/internal/library/scrape"
 	"github.com/ppxb/miyabi/internal/maintenance"
 	"github.com/ppxb/miyabi/internal/metadata"
 	"github.com/ppxb/miyabi/internal/metadata/providers"
 	"github.com/ppxb/miyabi/internal/monitor"
 	"github.com/ppxb/miyabi/internal/network"
-	"github.com/ppxb/miyabi/internal/netx"
 	"github.com/ppxb/miyabi/internal/offline"
 	"github.com/ppxb/miyabi/internal/strm"
-	"github.com/ppxb/miyabi/internal/subtitle"
 	"github.com/ppxb/miyabi/internal/tasks"
 )
 
@@ -54,8 +50,7 @@ type App struct {
 	monitors  *monitor.Service
 	driveSvc  *drive.Drive
 	catalogue *catalogue.Service
-	scrape    *scrape.Service
-	metadata  *metadata.Service
+	media     *metadata.ImageReader
 	embySvc   *emby.Service
 }
 
@@ -106,46 +101,29 @@ func New(cfg *config.Config, logger *slog.Logger) (*App, error) {
 		_ = store.Close()
 		return nil, fmt.Errorf("initialize catalogue service: %w", err)
 	}
-	fc2Source := providers.NewFC2(networkSvc.ProxyManager())
-	fanzaSource := providers.NewFANZA(networkSvc.ProxyManager())
-	heyzoSource := providers.NewHEYZO(networkSvc.ProxyManager())
-	pacopacomamaSource := providers.NewPacopacomama(networkSvc.ProxyManager())
-	metadataSvc, err := metadata.New(ctx, store.Client, fanzaSource, fc2Source, heyzoSource, pacopacomamaSource, providers.NewJavDB(catalogueSvc))
-	if err != nil {
-		fanzaSource.Close()
-		fc2Source.Close()
-		heyzoSource.Close()
-		pacopacomamaSource.Close()
-		catalogueSvc.Close()
-		driveSvc.Close()
-		_ = store.Close()
-		return nil, err
-	}
+	media := metadata.NewImageReader(
+		providers.NewFANZA(networkSvc.ProxyManager()),
+		providers.NewFC2(networkSvc.ProxyManager()),
+		providers.NewHEYZO(networkSvc.ProxyManager()),
+		providers.NewPacopacomama(networkSvc.ProxyManager()),
+		providers.NewJavDB(catalogueSvc),
+	)
 
 	offlineSvc := offline.New(store.Client, catalogueSvc, driveSvc, taskSvc, libSvc, offlineSubmitTimeout)
 	monitorSvc := monitor.New(store.Client, catalogueSvc, offlineSvc, taskSvc)
-	subtitleSvc := subtitle.NewService(store.Client, subtitle.NewFinder(networkSvc.ProxyManager()))
-	gfriendsClient := gfriends.New(cfg.DataDir, &http.Client{
-		Timeout:   30 * time.Second,
-		Transport: netx.NewTransport(networkSvc.ProxyManager()),
-	})
-	syncActors := cfg.EmbySyncActors
 	embySvc, err := emby.NewService(ctx, store.Client, emby.Config{
 		Enabled:    cfg.EmbyEnabled,
 		ServerURL:  cfg.EmbyServerURL,
 		APIKey:     cfg.EmbyAPIKey,
 		MediaPath:  cfg.EmbyMediaPath,
 		LocalDir:   cfg.EmbyDir,
-		SyncActors: &syncActors,
 		PublicURL:  cfg.PublicURL,
 	}, emby.Dependencies{
-		GFriends:          gfriendsClient,
-		Media:             metadataSvc,
 		ExportManager:     exportMgr,
 		ScheduleLocalScan: libSvc.ScheduleLocalScan,
 	})
 	if err != nil {
-		metadataSvc.Close()
+		media.Close()
 		catalogueSvc.Close()
 		driveSvc.Close()
 		_ = store.Close()
@@ -154,18 +132,23 @@ func New(cfg *config.Config, logger *slog.Logger) (*App, error) {
 	// This is the only cycle: library -> Emby -> catalogue -> library.
 	// Bind it before starting task pools or accepting requests.
 	libSvc.SetMediaNotifier(embySvc)
-	scrapeSvc := scrape.New(store.Client, driveSvc, metadataSvc, images, taskSvc, scrape.Dependencies{
-		ExportManager: exportMgr, MediaNotifier: embySvc, Subtitles: subtitleSvc,
-	})
-	maintenanceSvc, err := maintenance.New(cfg.DataDir, store.Client, images, scrapeSvc)
+	maintenanceSvc, err := maintenance.New(cfg.DataDir, store.Client, images, images)
 	if err != nil {
-		scrapeSvc.Close()
 		embySvc.Close()
-		metadataSvc.Close()
+		media.Close()
 		catalogueSvc.Close()
 		driveSvc.Close()
 		_ = store.Close()
 		return nil, fmt.Errorf("initialize maintenance service: %w", err)
+	}
+
+	if err := taskSvc.RetireScrapingTasks(ctx); err != nil {
+		embySvc.Close()
+		media.Close()
+		catalogueSvc.Close()
+		driveSvc.Close()
+		_ = store.Close()
+		return nil, fmt.Errorf("retire scraping tasks: %w", err)
 	}
 
 	if err := libSvc.ScheduleLocalScan(ctx); err != nil {
@@ -176,7 +159,6 @@ func New(cfg *config.Config, logger *slog.Logger) (*App, error) {
 	}
 
 	taskRegistry.Register(tasks.NewHandler(tasks.KindScan, libSvc.Scan, libSvc.Finished).WithRetry(domain.RetryDelay))
-	taskRegistry.Register(tasks.NewHandler(tasks.KindScrape, scrapeSvc.Scrape, scrapeSvc.Finished).WithRetry(domain.RetryDelay))
 	taskRegistry.Register(tasks.NewHandler(tasks.KindSubscriptionBatch, monitorSvc.BatchHandler, monitorSvc.BatchFinished))
 
 	pools := newTaskPools(taskSvc, logger)
@@ -184,15 +166,16 @@ func New(cfg *config.Config, logger *slog.Logger) (*App, error) {
 	router := api.NewRouter(api.Dependencies{
 		Logger:         logger,
 		Access:         api.NewAccessGateService(cfg.AccessPassword, cfg.JWTSecret),
+		Explore:        catalogueSvc,
 		Catalogue:      catalogueSvc,
-		Metadata:       metadataSvc,
+		Media:          media,
 		Drive:          driveSvc,
 		Offline:        offlineSvc,
 		Monitor:        monitorSvc,
 		Library:        libSvc,
 		STRM:           strm.New(store.Client, driveSvc),
 		Tasks:          &taskViews{Service: taskSvc, database: store.Client, library: libSvc, monitor: monitorSvc},
-		Artwork:        scrapeSvc,
+		Artwork:        images,
 		Maintenance:    maintenanceSvc,
 		Network:        networkSvc,
 		Emby:           embySvc,
@@ -219,8 +202,7 @@ func New(cfg *config.Config, logger *slog.Logger) (*App, error) {
 		monitors:  monitorSvc,
 		driveSvc:  driveSvc,
 		catalogue: catalogueSvc,
-		scrape:    scrapeSvc,
-		metadata:  metadataSvc,
+		media:     media,
 		embySvc:   embySvc,
 	}, nil
 }
@@ -282,11 +264,8 @@ func (a *App) Close() error {
 	if a.embySvc != nil {
 		a.embySvc.Close()
 	}
-	if a.scrape != nil {
-		a.scrape.Close()
-	}
-	if a.metadata != nil {
-		a.metadata.Close()
+	if a.media != nil {
+		a.media.Close()
 	}
 	if a.catalogue != nil {
 		a.catalogue.Close()

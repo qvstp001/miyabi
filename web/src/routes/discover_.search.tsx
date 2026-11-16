@@ -40,6 +40,9 @@ function MetadataSearchRoute() {
             previous.kind === 'tag' ? { ...previous, zone, main: '', page: 1 } : previous
         })
       }
+      onSortingChange={sorting =>
+        void navigate({ search: previous => ({ ...previous, ...sorting, page: 1 }) })
+      }
       onMainChange={main => void navigate({ search: previous => ({ ...previous, main, page: 1 }) })}
     />
   )

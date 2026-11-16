@@ -2,6 +2,7 @@ import { MonitorCogIcon, MonitorIcon, MoonIcon, SunIcon } from 'lucide-react'
 import { useTheme } from 'next-themes'
 
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { CatalogueDisplayOptions } from '@/features/discover/display-settings'
 import { SettingRow, SettingsSection } from './shared'
 
 const THEME_OPTIONS = [
@@ -25,6 +26,11 @@ export function AppearanceSection() {
             ))}
           </TabsList>
         </Tabs>
+      </SettingRow>
+      <SettingRow title="JavDB 展示" description="应用于发现、搜索及关联作品列表，保存在当前浏览器">
+        <div className="w-64 max-w-full">
+          <CatalogueDisplayOptions />
+        </div>
       </SettingRow>
     </SettingsSection>
   )

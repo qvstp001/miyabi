@@ -12,14 +12,11 @@ import (
 
 // startLocalScan queues an import of the configured Emby directory.
 func (s *Service) startLocalScan(ctx context.Context) (domain.TaskInfo, error) {
-	root, err := s.localScanRoot()
+	source, err := s.localSource()
 	if err != nil {
 		return domain.TaskInfo{}, err
 	}
-	return s.EnqueueScan(ctx, domain.LibrarySource{
-		AccountID: domain.LocalAccountID,
-		Directory: domain.LibraryDirectory{ID: root, Name: "Emby 本地目录", Path: root},
-	})
+	return s.EnqueueFreshScan(ctx, source)
 }
 
 // ScheduleLocalScan also runs at startup, where a fresh install may not have
@@ -30,6 +27,17 @@ func (s *Service) ScheduleLocalScan(ctx context.Context) error {
 		return nil
 	}
 	return err
+}
+
+func (s *Service) localSource() (domain.LibrarySource, error) {
+	root, err := s.localScanRoot()
+	if err != nil {
+		return domain.LibrarySource{}, err
+	}
+	return domain.LibrarySource{
+		AccountID: domain.LocalAccountID,
+		Directory: domain.LibraryDirectory{ID: root, Name: "Emby 本地目录", Path: root},
+	}, nil
 }
 
 func (s *Service) localScanRoot() (string, error) {
@@ -68,6 +76,6 @@ func (s *Service) scanLocal(ctx context.Context, id int, payload domain.ScanPayl
 	payload.Scan.FilesScanned = result.FilesScanned
 	payload.Scan.VideoFiles = result.MediaFiles
 	payload.Scan.MatchedFiles = result.MediaFiles
-	payload.Scan.Movies = result.MoviesAdded
+	payload.Scan.Movies = result.Movies
 	return scan.ReportScan(ctx, s.database.Task, id, payload, s.tasks)
 }

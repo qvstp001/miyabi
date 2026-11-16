@@ -11,7 +11,6 @@ const previous: EmbyConfig = {
   api_key: 'key',
   media_path: '/media',
   local_dir: 'E:\\media',
-  sync_actors: true,
   public_url: 'http://miyabi:8080'
 }
 

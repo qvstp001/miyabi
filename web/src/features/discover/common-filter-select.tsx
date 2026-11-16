@@ -1,40 +1,31 @@
 import type { NamedEntity } from '@/api/discover'
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue
-} from '@/components/ui/select'
+import { Checkbox } from '@/components/ui/checkbox'
+import { mainValues } from './filter-options'
 
-export function CommonFilterSelect({
-  options,
-  value,
-  onValueChange
-}: {
+export function CommonFilterSelect({ options, value, onValueChange }: {
   options: NamedEntity[]
   value: string
   onValueChange: (value: string) => void
 }) {
+  const selected = mainValues(value)
   return (
-    <Select
-      value={value || 'all'}
-      onValueChange={next => onValueChange(next === 'all' ? '' : next)}
-    >
-      <SelectTrigger className="w-full sm:w-48">
-        <SelectValue placeholder="全部条件" />
-      </SelectTrigger>
-      <SelectContent position="popper" align="start">
-        <SelectGroup>
-          <SelectItem value="all">全部条件</SelectItem>
-          {options.map(option => (
-            <SelectItem key={option.id} value={option.id}>
-              {option.name}
-            </SelectItem>
-          ))}
-        </SelectGroup>
-      </SelectContent>
-    </Select>
+    <div className="flex flex-wrap gap-x-4 gap-y-3">
+      {options.map(option => (
+        <label key={option.id} className="flex cursor-pointer items-center gap-2 text-sm">
+          <Checkbox
+            checked={selected.includes(option.id)}
+            onCheckedChange={checked =>
+              onValueChange(
+                (checked
+                  ? [...selected, option.id]
+                  : selected.filter(id => id !== option.id)
+                ).sort().join(',')
+              )
+            }
+          />
+          {option.name}
+        </label>
+      ))}
+    </div>
   )
 }

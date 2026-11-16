@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path"
 	"strings"
+	"time"
 
 	"github.com/ppxb/miyabi/internal/codeid"
 	"github.com/ppxb/miyabi/internal/domain"
@@ -12,6 +13,7 @@ import (
 	"github.com/ppxb/miyabi/internal/ent"
 	"github.com/ppxb/miyabi/internal/ent/file"
 	"github.com/ppxb/miyabi/internal/ent/movie"
+	"github.com/ppxb/miyabi/internal/nfo"
 	"github.com/ppxb/miyabi/internal/pan"
 )
 
@@ -85,7 +87,7 @@ func applyManualCodes(ctx context.Context, db *ent.Client, accountID string, vid
 	return nil
 }
 
-// ResolveNFOCodes uses matching NFOs only to identify and validate catalogue codes.
+// ResolveNFOCodes validates catalogue codes and retains existing NFO documents for import.
 // A sole NFO may identify unnamed videos only in an unshared directory.
 func ResolveNFOCodes(ctx context.Context, sess drive.Session, sidecars []pan.File, videos []Video) error {
 	if len(sidecars) == 0 {
@@ -103,7 +105,7 @@ func ResolveNFOCodes(ctx context.Context, sess drive.Session, sidecars []pan.Fil
 			shared = true
 		}
 	}
-	codes := make(map[string]string)
+	documents := make(map[string]*nfo.Movie)
 	for i := range videos {
 		video := &videos[i]
 		if video.Manual || !canIdentifyVideo(video.File) || (video.Code == "" && (shared || len(sidecars) != 1)) {
@@ -113,19 +115,26 @@ func ResolveNFOCodes(ctx context.Context, sess drive.Session, sidecars []pan.Fil
 		if !found {
 			continue
 		}
-		canonical, read := codes[entry.ID]
+		doc, read := documents[entry.ID]
 		if !read {
-			doc, err := readNFO(ctx, sess, entry)
+			parsed, err := readNFO(ctx, sess, entry)
 			if err != nil {
 				if ctx.Err() != nil {
 					return ctx.Err()
 				}
-				// Unreadable optional metadata must not prevent filename scraping.
-				codes[entry.ID] = ""
+				// Unreadable optional metadata must not prevent file indexing.
+				documents[entry.ID] = nil
 				continue
 			}
-			canonical = doc.Code
-			codes[entry.ID] = canonical
+			doc = &parsed
+			documents[entry.ID] = doc
+		}
+		if doc == nil {
+			continue
+		}
+		canonical := doc.Code
+		if canonical == "" {
+			canonical = video.Code
 		}
 		if canonical == "" {
 			continue
@@ -138,6 +147,14 @@ func ResolveNFOCodes(ctx context.Context, sess drive.Session, sidecars []pan.Fil
 			return domain.E(domain.KindConflict, fmt.Sprintf("NFO %s 的番号 %s 与视频 %s 的番号 %s 不一致", entry.Name, canonical, video.Name, expected), nil)
 		}
 		video.Code = canonical
+		if doc.Premiered != "" {
+			if _, err := time.Parse(time.DateOnly, doc.Premiered); err != nil {
+				continue
+			}
+		}
+		copy := *doc
+		copy.Code = canonical
+		video.Document = &copy
 	}
 	return nil
 }

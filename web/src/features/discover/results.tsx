@@ -3,11 +3,12 @@ import { EmptyState } from '@/components/empty-state'
 import { ErrorState } from '@/components/error-state'
 import { ListPagination } from '@/components/list-pagination'
 import { MovieGridSkeleton } from '@/components/movie'
-import { DISCOVER_PAGE_SIZE } from './constants'
+import { useCatalogueDisplay } from '@/stores/catalogue-display'
 import { MovieGrid } from './movie-grid'
 
 export function DiscoverResults({
   movies,
+  hasMore,
   loading,
   fetching,
   error,
@@ -17,6 +18,7 @@ export function DiscoverResults({
   onPageChange,
   onRetry
 }: {
+  hasMore?: boolean
   movies: DiscoverMovie[] | undefined
   loading: boolean
   fetching: boolean
@@ -27,6 +29,8 @@ export function DiscoverResults({
   onPageChange: (page: number) => void
   onRetry: () => void
 }) {
+  const pageSize = useCatalogueDisplay(state => state.pageSize)
+  const density = useCatalogueDisplay(state => state.density)
   if (error) {
     return (
       <ErrorState
@@ -36,7 +40,7 @@ export function DiscoverResults({
       />
     )
   }
-  if (loading || !movies) return <MovieGridSkeleton count={DISCOVER_PAGE_SIZE} />
+  if (loading || !movies) return <MovieGridSkeleton count={pageSize} density={density} />
   return (
     <div className="flex flex-col gap-6">
       {movies.length === 0 && page === 1 ? (
@@ -46,7 +50,7 @@ export function DiscoverResults({
           <MovieGrid movies={movies} />
           <ListPagination
             page={page}
-            hasMore={movies.length === DISCOVER_PAGE_SIZE}
+            hasMore={hasMore ?? (movies.length >= pageSize)}
             disabled={fetching}
             onPageChange={onPageChange}
           />

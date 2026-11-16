@@ -17,7 +17,11 @@ import {
 } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { CommonFilterSelect } from './common-filter-select'
-import { DISCOVER_PAGE_SIZE, DISCOVER_ZONES } from './constants'
+import { DISCOVER_ZONES } from './constants'
+import { useCatalogueDisplay } from '@/stores/catalogue-display'
+import { CatalogueDisplaySettings } from './display-settings'
+import { SortControls } from './sort-controls'
+import type { BrowseSorting } from './filter-options'
 import { metadataBrowseParams } from './metadata-params'
 import { METADATA_LABELS, type MetadataSearch } from './metadata-search'
 import { DiscoverResults } from './results'
@@ -26,21 +30,24 @@ export function MetadataSearchPage({
   search,
   onPageChange,
   onZoneChange,
-  onMainChange
+  onMainChange,
+  onSortingChange
 }: {
   search: MetadataSearch
   onPageChange: (page: number) => void
   onZoneChange: (zone: JavDBZone | undefined) => void
   onMainChange: (main: string) => void
+  onSortingChange: (sorting: BrowseSorting) => void
 }) {
+  const pageSize = useCatalogueDisplay(state => state.pageSize)
   const taxonomy = useDiscoverTags(search.kind === 'tag' ? (search.zone ?? 'censored') : 'censored')
   const mainOptions = taxonomy.data?.find(category => category.id === 'main')?.tags ?? []
 
   const movies = useDiscoverMovies({
     page: search.page,
-    limit: DISCOVER_PAGE_SIZE,
-    sort: 'release',
-    order: 'desc',
+    limit: pageSize,
+    sort: search.sort ?? 'release',
+    order: search.order ?? 'desc',
     ...metadataBrowseParams(search)
   })
 
@@ -73,20 +80,28 @@ export function MetadataSearchPage({
             </SelectContent>
           </Select>
         ) : null}
-        {taxonomy.isPending ? (
-          <Skeleton className="h-9 w-48 rounded-full" />
-        ) : taxonomy.isError ? (
-          <InlineError onRetry={() => void taxonomy.refetch()} retrying={taxonomy.isFetching}>
-            通用筛选加载失败
-          </InlineError>
-        ) : mainOptions.length > 0 ? (
-          <CommonFilterSelect
-            options={mainOptions}
-            value={search.main}
-            onValueChange={onMainChange}
-          />
-        ) : null}
       </PageHeader>
+      {taxonomy.isPending ? (
+        <Skeleton className="h-9 w-48 rounded-full" />
+      ) : taxonomy.isError ? (
+        <InlineError onRetry={() => void taxonomy.refetch()} retrying={taxonomy.isFetching}>
+          通用筛选加载失败
+        </InlineError>
+      ) : mainOptions.length > 0 ? (
+        <CommonFilterSelect
+          options={mainOptions}
+          value={search.main}
+          onValueChange={onMainChange}
+        />
+      ) : null}
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <SortControls
+          sort={search.sort ?? 'release'}
+          order={search.order ?? 'desc'}
+          onChange={onSortingChange}
+        />
+        <CatalogueDisplaySettings onPageSizeChange={() => onPageChange(1)} />
+      </div>
       <DiscoverResults
         movies={movies.data}
         loading={movies.isPending}

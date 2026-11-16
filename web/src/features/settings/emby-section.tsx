@@ -17,7 +17,6 @@ interface EmbyFormData {
   port: string
   api_key: string
   media_path: string
-  sync_actors: boolean
   public_url: string
 }
 
@@ -29,7 +28,6 @@ function configToFormData(config?: EmbyConfig | null): EmbyFormData {
     port,
     api_key: config?.api_key ?? '',
     media_path: config?.media_path ?? '',
-    sync_actors: config?.sync_actors ?? true,
     public_url: config?.public_url ?? ''
   }
 }
@@ -53,8 +51,7 @@ export function EmbySection() {
       current.port !== initial.port ||
       current.api_key !== initial.api_key ||
       current.media_path !== initial.media_path ||
-      current.public_url !== initial.public_url ||
-      current.sync_actors !== initial.sync_actors)
+      current.public_url !== initial.public_url)
 
   // Keep the saved form visible until the query observer receives the same
   // values. Clearing it in the success callback can briefly reveal old data.
@@ -157,7 +154,6 @@ export function EmbySection() {
       server_url: serverUrl,
       api_key: trimmedKey,
       media_path: current.media_path.trim(),
-      sync_actors: current.sync_actors,
       public_url: current.public_url.trim()
     }
 
@@ -176,7 +172,7 @@ export function EmbySection() {
     <SettingsSection icon={<TvMinimalIcon className="size-4" />} title="Emby">
       <SettingRow
         title="启用 Emby"
-        description="媒体扫描与刮削完成后，主动通知 Emby 增量刷新"
+        description="媒体库同步完成后，主动通知 Emby 增量刷新"
         inline
       >
         <Switch checked={current.enabled} disabled={disabled} onCheckedChange={handleToggle} />
@@ -184,18 +180,6 @@ export function EmbySection() {
 
       {current.enabled ? (
         <>
-          <SettingRow
-            title="同步演员头像"
-            description="自动匹配 GFriends 高清女优头像并同步至 Emby"
-            inline
-          >
-            <Switch
-              checked={current.sync_actors}
-              disabled={disabled}
-              onCheckedChange={checked => updateField('sync_actors', checked)}
-            />
-          </SettingRow>
-
           <SettingRow title="服务器地址" description="Emby 服务的 IP 或域名">
             <Input
               autoFocus={form?.enabled === true && !initial.enabled}

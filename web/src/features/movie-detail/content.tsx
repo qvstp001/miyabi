@@ -8,6 +8,7 @@ import { MovieMagnets } from './magnets'
 import { MoviePreviews } from './previews'
 import { MovieRecommendations } from './recommendations'
 import { MovieDetailSkeleton } from './skeleton'
+import { MovieCommunity } from './community'
 
 export function MovieDetailContent({ movie }: { movie: MovieDetailTarget }) {
   if ('libraryId' in movie) return <LibraryMovieDetail movieId={movie.libraryId} />
@@ -52,6 +53,7 @@ function LibraryCatalogueExtras({ movieId }: { movieId: string }) {
   useRecordMovieView(movieId)
   return (
     <>
+      <MovieCommunity movieId={movieId} />
       <MovieMagnets movieID={movieId} query={magnets} />
       {detail.data ? (
         <>
@@ -104,6 +106,7 @@ function IdentifiedMovieDetail({ movieId }: { movieId: string }) {
       <MovieHero movie={detail.data} />
       <MoviePreviews images={detail.data.preview_images} />
       <MovieMagnets movieID={movieId} query={magnets} />
+      <MovieCommunity movieId={movieId} />
       <MovieRecommendations title="TA（们）还出演过" movies={detail.data.actor_movies} />
       <MovieRecommendations title="你可能也喜欢" movies={detail.data.related_movies} />
     </div>

@@ -56,11 +56,12 @@ type Movie struct {
 }
 
 type Page struct {
-	Source  *domain.LibrarySource `json:"source,omitempty"`
-	Movies  []Movie               `json:"movies"`
-	Total   int                   `json:"total"`
-	Page    int                   `json:"page"`
-	HasMore bool                  `json:"has_more"`
+	Source      *domain.LibrarySource `json:"source,omitempty"`
+	LocalSource *domain.LibrarySource `json:"local_source,omitempty"`
+	Movies      []Movie               `json:"movies"`
+	Total       int                   `json:"total"`
+	Page        int                   `json:"page"`
+	HasMore     bool                  `json:"has_more"`
 }
 
 type Service struct {
@@ -103,11 +104,23 @@ func New(database *ent.Client, d *drive.Drive, tasks *tasks.Service, images *med
 }
 
 func (s *Service) StartScan(ctx context.Context) (domain.TaskInfo, error) {
+	if s.Source() == nil {
+		return s.startLocalScan(ctx)
+	}
 	sess, err := s.drive.Open(ctx)
 	if err != nil {
 		return domain.TaskInfo{}, err
 	}
-	return s.EnqueueScan(ctx, sess.Source())
+	job, err := s.EnqueueScan(ctx, sess.Source())
+	if err != nil {
+		return domain.TaskInfo{}, err
+	}
+	if s.exportMgr.Config().EmbyDir != "" {
+		if err := s.ScheduleLocalScan(ctx); err != nil {
+			return domain.TaskInfo{}, domain.E(domain.KindBusy, "115 扫描已入队，但外部 NFO 导入入队失败，请重试同步", err)
+		}
+	}
+	return job, nil
 }
 
 // StartRebuild scans the current source and refreshes every matched movie.
@@ -225,6 +238,9 @@ func libraryScope(source *domain.LibrarySource) predicate.File {
 
 func (s *Service) Movies(ctx context.Context, page, limit int) (Page, error) {
 	result := Page{Movies: []Movie{}, Page: page, Source: s.Source()}
+	if local, err := s.localSource(); err == nil {
+		result.LocalSource = &local
+	}
 	scope := libraryScope(result.Source)
 	var err error
 	result.Total, err = s.database.File.Query().Where(scope).Aggregate(func(selector *sql.Selector) string {

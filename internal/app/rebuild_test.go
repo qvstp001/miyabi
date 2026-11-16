@@ -33,7 +33,7 @@ func TestFailedRebuildMarksMovieFailedUntilSuccessfulRetry(t *testing.T) {
 	t.Cleanup(f.scrape.Close)
 	f.tasks.Registry().Register(tasks.NewHandler(tasks.KindScrape, f.scrape.Scrape, f.scrape.Finished).WithRetry(domain.RetryDelay))
 	f.drive.addFile("101", "10", "042126_100.mp4", 2<<30, []byte("video"))
-	if _, err := f.library.StartScan(ctx); err != nil {
+	if _, err := f.library.StartRebuild(ctx); err != nil {
 		t.Fatal(err)
 	}
 	f.runQueue(t)
@@ -59,8 +59,8 @@ func TestFailedRebuildMarksMovieFailedUntilSuccessfulRetry(t *testing.T) {
 	if _, err := scan.NewLocalScanner(f.store.Client, f.images).Scan(ctx, f.embyDir); err != nil {
 		t.Fatal(err)
 	}
-	if got := f.store.Client.Movie.GetX(ctx, before.ID); got.ScrapeStatus != movie.ScrapeStatusFailed {
-		t.Fatal("old local NFO cleared rebuild failure")
+	if got := f.store.Client.Movie.GetX(ctx, before.ID); got.ScrapeStatus != movie.ScrapeStatusDone {
+		t.Fatal("external NFO did not replace legacy failed metadata")
 	}
 	source.fetchError = nil
 	if _, err := f.library.RetryTask(ctx, parent.ID); err != nil {
@@ -98,7 +98,7 @@ func TestRebuildReplacesSavedMetadataAndPublishesNewPreviews(t *testing.T) {
 			t.Cleanup(f.scrape.Close)
 			f.tasks.Registry().Register(tasks.NewHandler(tasks.KindScrape, f.scrape.Scrape, f.scrape.Finished).WithRetry(domain.RetryDelay))
 			f.drive.addFile("101", "10", tc.code+".mp4", 2<<30, []byte("video"))
-			if _, err := f.library.StartScan(ctx); err != nil {
+			if _, err := f.library.StartRebuild(ctx); err != nil {
 				t.Fatal(err)
 			}
 			f.runQueue(t)

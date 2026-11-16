@@ -38,6 +38,7 @@ func TestScanNotificationsFollowTransactionCommit(t *testing.T) {
 						SetAccountID("account").SetRootID("root").SetScanID("previous").ExecX(ctx)
 				}
 				if operation == "reconcile with scrape" {
+					payload.Rebuild = true
 					film := store.Client.Movie.Create().SetCode("TEST-001").SaveX(ctx)
 					store.Client.File.Create().SetFileID("indexed").SetName("TEST-001.mp4").SetSize(1).
 						SetAccountID("account").SetRootID("root").SetScanID(payload.ScanID).SetMovieID(film.ID).ExecX(ctx)

@@ -14,7 +14,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/ppxb/miyabi/internal/catalogue"
 	"github.com/ppxb/miyabi/internal/database"
@@ -34,65 +33,51 @@ import (
 	"github.com/ppxb/miyabi/internal/tasks"
 )
 
-func TestRepeatedScanReusesActiveWorkAndPreservesCompleteExports(t *testing.T) {
+func TestRepeatedScanIndexesWithoutScrapingOrOverwritingExternalMetadata(t *testing.T) {
 	f := newPipelineFixture(t)
-	ctx := t.Context()
 	f.library = library.New(f.store.Client, f.driveService, f.tasks, f.images, library.Options{
-		Pacing:        func(context.Context) error { return nil },
+		Pacing: func(context.Context) error { return nil },
 		ExportManager: export.NewManager(export.Config{EmbyDir: f.embyDir, PublicURL: "http://127.0.0.1:8080"}),
 	})
+	ctx := t.Context()
 	f.drive.addFile("101", "10", "ABP-123.mp4", 2<<30, []byte("video"))
 	f.addCatalogueMovie(fixtureDetail())
+	dir := export.EmbyMovieDir(f.embyDir, "ABP-123")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"ABP-123.nfo", "poster.jpg", "fanart.jpg"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("external metadata"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
 	for range 2 {
 		if _, err := f.library.StartScan(ctx); err != nil {
 			t.Fatal(err)
 		}
-		job, err := f.tasks.Queue().Claim(ctx, []tasks.Kind{tasks.KindScan})
-		if err != nil || job == nil {
-			t.Fatalf("scan claim: %+v %v", job, err)
-		}
-		if err := f.library.Scan(ctx, *job); err != nil {
-			t.Fatal(err)
-		}
-		if err := f.tasks.Queue().Finish(ctx, job.ID, nil); err != nil {
-			t.Fatal(err)
+		jobs := f.runQueue(t)
+		if len(jobs) != 2 || jobs[0].Type != tasks.KindScan || jobs[1].Type != tasks.KindScan {
+			t.Fatalf("ordinary scan scheduled scraping: %+v", jobs)
 		}
 	}
-	if len(f.tasksOfType(t, "scrape")) != 1 {
-		t.Fatal("overlapping scans duplicated scraping")
+	if len(f.tasksOfType(t, "scrape")) != 0 || len(f.catalogue.calls) != 0 {
+		t.Fatalf("automatic metadata work: calls=%v", f.catalogue.calls)
+	}
+	if body, err := os.ReadFile(filepath.Join(dir, "ABP-123.strm")); err != nil || !strings.Contains(string(body), "/api/strm/play/101") {
+		t.Fatalf("playback link missing: %s, %v", body, err)
+	}
+	for _, name := range []string{"ABP-123.nfo", "poster.jpg", "fanart.jpg"} {
+		if body, err := os.ReadFile(filepath.Join(dir, name)); err != nil || string(body) != "external metadata" {
+			t.Fatalf("external file changed: %s, %v", name, err)
+		}
 	}
 	infos, err := f.library.ListTasks(ctx)
-	if err != nil || len(infos) != 2 {
-		t.Fatalf("workflows: %+v %v", infos, err)
+	if err != nil || len(infos) != 4 {
+		t.Fatalf("workflows=%+v err=%v", infos, err)
 	}
 	for _, info := range infos {
-		if info.Status != "queued" || info.Scan.MetadataTotal != 1 {
-			t.Fatalf("shared work not tracked: %+v", info)
-		}
-	}
-	f.runQueue(t)
-	before := maps.Clone(f.catalogue.calls)
-	stamp := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
-	dir := filepath.Join(f.embyDir, "ABP", "ABP-123")
-	files := []string{"ABP-123.nfo", "ABP-123.strm", "poster.jpg", "fanart.jpg"}
-	for _, name := range files {
-		if err := os.Chtimes(filepath.Join(dir, name), stamp, stamp); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if _, err := f.library.StartScan(ctx); err != nil {
-		t.Fatal(err)
-	}
-	if executed := f.runQueue(t); len(executed) != 1 || executed[0].Type != tasks.KindScan {
-		t.Fatalf("unchanged scan started work: %+v", executed)
-	}
-	if !maps.Equal(before, f.catalogue.calls) {
-		t.Fatal("unchanged scan requested metadata or images")
-	}
-	for _, name := range files {
-		info, err := os.Stat(filepath.Join(dir, name))
-		if err != nil || !info.ModTime().Equal(stamp) {
-			t.Fatalf("unchanged file rewritten: %s %v", name, err)
+		if info.Status != "done" || info.Scan.MetadataTotal != 0 {
+			t.Fatalf("scan remained in metadata processing: %+v", info)
 		}
 	}
 }
@@ -425,7 +410,7 @@ func TestPipelineScansScrapesAndWritesSidecarsEndToEnd(t *testing.T) {
 	video := fixture.drive.addFile("101", "11", "ABP-123.mp4", 2<<30, []byte("video"))
 	fixture.addCatalogueMovie(fixtureDetail())
 
-	if _, err := fixture.library.StartScan(ctx); err != nil {
+	if _, err := fixture.library.StartRebuild(ctx); err != nil {
 		t.Fatal(err)
 	}
 	executed := fixture.runQueue(t)
@@ -569,7 +554,7 @@ func TestPipelineUsesNFOCodeButScrapesCatalogueMetadata(t *testing.T) {
 	}
 	fixture.drive.addFile("104", "11", "ABP-123.nfo", int64(len(body)), body)
 
-	if _, err := fixture.library.StartScan(ctx); err != nil {
+	if _, err := fixture.library.StartRebuild(ctx); err != nil {
 		t.Fatal(err)
 	}
 	fixture.runQueue(t)
@@ -617,7 +602,7 @@ func TestPipelineMarksMovieFailedWhenCatalogueLacksIt(t *testing.T) {
 	fixture.drive.addDirectory("11", "10", "ZZZ-999")
 	fixture.drive.addFile("101", "11", "ZZZ-999.mp4", 2<<30, []byte("video"))
 
-	if _, err := fixture.library.StartScan(ctx); err != nil {
+	if _, err := fixture.library.StartRebuild(ctx); err != nil {
 		t.Fatal(err)
 	}
 	executed := fixture.runQueue(t)
@@ -636,21 +621,13 @@ func TestPipelineMarksMovieFailedWhenCatalogueLacksIt(t *testing.T) {
 	if err != nil || len(infos) != 1 || infos[0].Status != string(task.StatusFailed) || infos[0].Error == nil {
 		t.Fatalf("scan workflow = %+v, %v", infos, err)
 	}
-	// Repairing the upstream failure must not require another directory scan.
-	detail := fixtureDetail()
-	detail.Code = "ZZZ-999"
-	fixture.addCatalogueMovie(detail)
+	// Legacy scraping failures have no retry entry in the application.
 	views := &taskViews{Service: fixture.tasks, database: fixture.store.Client, library: fixture.library}
-	if _, err := views.Retry(ctx, infos[0].ID); err != nil {
-		t.Fatal(err)
+	if _, err := views.Retry(ctx, infos[0].ID); !domain.IsKind(err, domain.KindInvalid) {
+		t.Fatalf("legacy scraping retry was accepted: %v", err)
 	}
-	retried := fixture.runQueue(t)
-	if len(retried) != 1 || retried[0].ID != scrapes[0].ID || retried[0].Type != tasks.KindScrape {
-		t.Fatalf("retry replayed completed work: %+v", retried)
-	}
-	infos, err = fixture.library.ListTasks(ctx)
-	if err != nil || len(infos) != 1 || infos[0].Status != "done" || infos[0].CanRetry {
-		t.Fatalf("retried workflow = %+v, %v", infos, err)
+	if got := fixture.store.Client.Task.GetX(ctx, scrapes[0].ID); got.Status != task.StatusFailed {
+		t.Fatal("rejected retry changed legacy work")
 	}
 }
 
@@ -661,7 +638,7 @@ func TestPipelineRemovesMovieWhenDeletedFrom115(t *testing.T) {
 	fixture.drive.addFile("101", "11", "ABP-123.mp4", 2<<30, []byte("video"))
 
 	// 1. Initial scan: movie gets indexed and scraped
-	if _, err := fixture.library.StartScan(ctx); err != nil {
+	if _, err := fixture.library.StartRebuild(ctx); err != nil {
 		t.Fatal(err)
 	}
 	fixture.runQueue(t)

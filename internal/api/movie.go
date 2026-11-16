@@ -15,34 +15,6 @@ type LibraryManager interface {
 	Movie(context.Context, int) (lib.MovieDetail, error)
 	Preview(context.Context, int, int) (domain.ImageCandidate, error)
 	StartScan(context.Context) (domain.TaskInfo, error)
-	StartRebuild(context.Context) (domain.TaskInfo, error)
-	RescrapeMovie(context.Context, int, string) (domain.TaskInfo, error)
-}
-
-func libraryMovieScrapeHandler(library LibraryManager) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		uri, ok := bindURI[struct {
-			ID int `uri:"id" binding:"min=1"`
-		}](c)
-		if !ok {
-			return
-		}
-		input, ok := bindJSON[struct {
-			Code string `json:"code" binding:"max=120"`
-		}](c)
-		if !ok {
-			return
-		}
-		job, err := library.RescrapeMovie(c.Request.Context(), uri.ID, input.Code)
-		accepted(c, job, err)
-	}
-}
-
-func libraryRebuildHandler(library LibraryManager) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		job, err := library.StartRebuild(c.Request.Context())
-		accepted(c, job, err)
-	}
 }
 
 func libraryMovieHandler(library LibraryManager) gin.HandlerFunc {
@@ -58,7 +30,7 @@ func libraryMovieHandler(library LibraryManager) gin.HandlerFunc {
 	}
 }
 
-func libraryPreviewHandler(library LibraryManager, metadata MetadataManager) gin.HandlerFunc {
+func libraryPreviewHandler(library LibraryManager, reader ImageReader) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		uri, ok := bindURI[struct {
 			ID    int `uri:"id" binding:"min=1"`
@@ -72,7 +44,7 @@ func libraryPreviewHandler(library LibraryManager, metadata MetadataManager) gin
 			c.Error(err)
 			return
 		}
-		media, err := metadata.Image(c.Request.Context(), candidate)
+		media, err := reader.Image(c.Request.Context(), candidate)
 		if err != nil {
 			c.Error(err)
 			return

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -25,7 +24,7 @@ import (
 	"github.com/ppxb/miyabi/internal/tasks"
 )
 
-func TestRescanReusesActiveScrapeWithoutChangingItsCheckpoint(t *testing.T) {
+func TestOrdinaryRescanDoesNotCreateOrReuseScrapes(t *testing.T) {
 	for _, scenario := range []string{"queued", "running", "retrying", "other source", "failed", "published"} {
 		t.Run(scenario, func(t *testing.T) {
 			run := reconcileFixture(t, 0, 1)
@@ -53,16 +52,12 @@ func TestRescanReusesActiveScrapeWithoutChangingItsCheckpoint(t *testing.T) {
 			if err := run.reconcile(ctx); err != nil {
 				t.Fatal(err)
 			}
-			reused := scenario != "other source" && scenario != "failed" && scenario != "published"
-			want := 2
-			if reused {
-				want = 1
-			}
+			want := 1
 			if got := run.scanner.db.Task.Query().Where(task.TypeEQ("scrape")).CountX(ctx); got != want {
 				t.Fatalf("scrape jobs=%d want=%d", got, want)
 			}
 			payload, err := tasks.DecodePayload[domain.ScanPayload](run.scanner.db.Task.GetX(ctx, run.taskID).Payload)
-			if err != nil || reused && !slices.Equal(payload.ReusedTasks, []int{original.ID}) || !reused && len(payload.ReusedTasks) != 0 {
+			if err != nil || len(payload.ReusedTasks) != 0 {
 				t.Fatalf("wrong shared work: %+v %v", payload, err)
 			}
 			got := run.scanner.db.Task.GetX(ctx, original.ID)
@@ -162,7 +157,7 @@ func TestReconcilePagesPreparationWithoutHoldingDatabaseWriter(t *testing.T) {
 				if len(records) > reconcileBatchSize {
 					t.Errorf("unbounded movie page: %d", len(records))
 				}
-				if records[0].ScrapeStatus == movie.ScrapeStatusDone {
+				if len(records[0].Edges.Files) > 0 {
 					pages++
 					inspected += len(records)
 					writeCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
@@ -182,20 +177,12 @@ func TestReconcilePagesPreparationWithoutHoldingDatabaseWriter(t *testing.T) {
 	if err := run.reconcile(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if pages != 3 || inspected != 201 || writes != 3 {
+	if pages != 5 || inspected != 406 || writes != 5 {
 		t.Fatalf("preparation: pages=%d movies=%d concurrent writes=%d", pages, inspected, writes)
 	}
 	jobs := run.scanner.db.Task.Query().Where(task.TypeEQ("scrape")).AllX(ctx)
-	if len(jobs) != 205 || len(work) != 1 {
+	if len(jobs) != 0 || len(work) != 0 {
 		t.Fatalf("jobs=%d wakeups=%d", len(jobs), len(work))
-	}
-	seen := make(map[int]bool)
-	for _, job := range jobs {
-		input, err := tasks.DecodePayload[scrape.MetadataPayload](job.Payload)
-		if err != nil || input.ScanTaskID != run.taskID || seen[input.MovieID] || input.Source != run.payload.Source || job.ResourceKey != fmt.Sprintf("movie:%d", input.MovieID) {
-			t.Fatalf("invalid or duplicate child: %+v %v", input, err)
-		}
-		seen[input.MovieID] = true
 	}
 	for _, code := range []string{"TEST-000", "TEST-100", "TEST-200"} {
 		if _, err := os.Stat(filepath.Join(export.EmbyMovieDir(run.scanner.exportMgr.Config().EmbyDir, code), code+".strm")); err != nil {
@@ -251,20 +238,20 @@ func TestReconcileRetryNotifiesExportsWrittenBeforeFailedCommit(t *testing.T) {
 	if err != nil || !before.ModTime().Equal(after.ModTime()) {
 		t.Fatal("retry rewrote an already complete export")
 	}
-	if run.scanner.db.EmbyNotification.Query().CountX(ctx) != 1 ||
-		run.scanner.db.Task.Query().Where(task.TypeEQ("scrape")).CountX(ctx) != 1 || len(work) != 1 {
+	if run.scanner.db.EmbyNotification.Query().CountX(ctx) != 2 ||
+		run.scanner.db.Task.Query().Where(task.TypeEQ("scrape")).CountX(ctx) != 0 || len(work) != 0 {
 		t.Fatal("retry missed notification or duplicated metadata work")
 	}
 	completed := run.scanner.db.Task.GetX(ctx, run.taskID)
 	if err := run.scanner.Run(ctx, tasks.Job{ID: completed.ID, Payload: completed.Payload}); err != nil {
 		t.Fatalf("completed scan could not resume: %v", err)
 	}
-	if run.scanner.db.Task.Query().Where(task.TypeEQ("scrape")).CountX(ctx) != 1 {
+	if run.scanner.db.Task.Query().Where(task.TypeEQ("scrape")).CountX(ctx) != 0 {
 		t.Fatal("completed scan replay duplicated metadata jobs")
 	}
 }
 
-func TestReconcileRechecksPreparedMovieVersion(t *testing.T) {
+func TestReconcileDoesNotScrapeWhenSavedMetadataChanges(t *testing.T) {
 	run := reconcileFixture(t, 1, 0)
 	ctx := t.Context()
 	cfg := run.scanner.exportMgr.Config()
@@ -279,13 +266,14 @@ func TestReconcileRechecksPreparedMovieVersion(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if got := run.scanner.db.Task.Query().Where(task.TypeEQ("scrape")).CountX(ctx); got != 1 {
-		t.Fatal("stale preparation suppressed necessary metadata work")
+	if got := run.scanner.db.Task.Query().Where(task.TypeEQ("scrape")).CountX(ctx); got != 0 {
+		t.Fatal("metadata changes unexpectedly triggered automatic scraping")
 	}
 }
 
 func TestReconcileBulkFailureRollsBackEarlierBatches(t *testing.T) {
 	run := reconcileFixture(t, 0, reconcileBatchSize+1)
+	run.payload.Rebuild = true
 	ctx := t.Context()
 	failure := errors.New("second task batch failed")
 	created := 0

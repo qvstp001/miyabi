@@ -17,26 +17,20 @@ type libraryPageStub struct {
 	page, limit int
 }
 
-type libraryRebuildStub struct {
-	LibraryManager
-	err error
-}
-
-func (stub *libraryRebuildStub) StartRebuild(context.Context) (domain.TaskInfo, error) {
-	return domain.TaskInfo{ID: 42, Type: "scan", Status: "queued", Rebuild: true}, stub.err
-}
-
-func TestLibraryRebuildReturnsTaskAndPropagatesSourceErrors(t *testing.T) {
-	for _, failure := range []error{nil, domain.E(domain.KindConflict, "媒体目录未挂载", nil)} {
-		router := NewRouter(Dependencies{Access: NewAccessGateService("", ""), Library: &libraryRebuildStub{err: failure}, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
+func TestScrapingRoutesAreRemoved(t *testing.T) {
+	router := NewRouter(Dependencies{Access: NewAccessGateService("", ""), Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
+	for _, endpoint := range []struct {
+		method, path string
+	}{
+		{http.MethodPost, "/api/library/rebuild"},
+		{http.MethodPost, "/api/library/movies/42/scrape"},
+		{http.MethodGet, "/api/settings/scraping"},
+		{http.MethodPut, "/api/settings/scraping"},
+	} {
 		response := httptest.NewRecorder()
-		router.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/api/library/rebuild", nil))
-		want := http.StatusAccepted
-		if failure != nil {
-			want = http.StatusConflict
-		}
-		if response.Code != want {
-			t.Fatalf("rebuild status=%d body=%s", response.Code, response.Body)
+		router.ServeHTTP(response, httptest.NewRequest(endpoint.method, endpoint.path, nil))
+		if response.Code != http.StatusNotFound {
+			t.Fatalf("%s %s: status=%d body=%s", endpoint.method, endpoint.path, response.Code, response.Body)
 		}
 	}
 }
@@ -54,7 +48,7 @@ func (stub *libraryPreviewStub) Preview(_ context.Context, id, index int) (domai
 }
 
 type metadataImageStub struct {
-	MetadataManager
+	ImageReader
 	received domain.ImageCandidate
 }
 
@@ -81,7 +75,7 @@ func TestLibraryPreviewRoutesSavedSourceAndRejectsInvalidTargets(t *testing.T) {
 			candidate := domain.ImageCandidate{Provider: tc.provider, URL: "https://image.example/preview.jpg", Role: "preview"}
 			metadata := &metadataImageStub{}
 			router := NewRouter(Dependencies{
-				Access: NewAccessGateService("", ""), Library: &libraryPreviewStub{candidate: candidate}, Metadata: metadata,
+				Access: NewAccessGateService("", ""), Library: &libraryPreviewStub{candidate: candidate}, Media: metadata,
 				Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
 			})
 			response := httptest.NewRecorder()

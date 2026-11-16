@@ -30,7 +30,7 @@ func (service *Service) MovieStates(ctx context.Context, identities []MovieIdent
 	if service.local != nil {
 		source = service.local.Source()
 	}
-	if source == nil {
+	if service.local == nil {
 		return result, nil
 	}
 	localMovies, err := service.local.MatchingMovies(ctx, ids, codes)
@@ -58,7 +58,7 @@ func (service *Service) MovieStates(ctx context.Context, identities []MovieIdent
 			taskIDs = append(taskIDs, identity.ID)
 		}
 	}
-	if len(taskIDs) == 0 || service.database == nil {
+	if len(taskIDs) == 0 || source == nil || service.database == nil {
 		return result, nil
 	}
 
@@ -66,7 +66,7 @@ func (service *Service) MovieStates(ctx context.Context, identities []MovieIdent
 		JavDBID string `json:"javdb_id"`
 	}
 	err = service.database.Task.Query().Where(
-		task.TypeIn(tasks.KindScan.String(), tasks.KindScrape.String()), task.StatusIn(task.StatusQueued, task.StatusRunning), func(s *sql.Selector) {
+		task.TypeEQ(tasks.KindScan.String()), task.StatusIn(task.StatusQueued, task.StatusRunning), func(s *sql.Selector) {
 			s.Where(sql.And(
 				sqljson.ValueIn(task.FieldPayload, taskIDs, sqljson.Path("javdb_id")),
 				sqljson.ValueEQ(task.FieldPayload, source.AccountID, sqljson.Path("source", "account_id")),

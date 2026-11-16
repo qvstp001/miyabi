@@ -311,3 +311,26 @@ func TestOfflineActivitySeparatesLibraryEntryFromArtworkAndRechecksFiles(t *test
 	}
 	assertPhase("available", false)
 }
+
+func TestIndexedDownloadRetainsSTRMExportFailureUntilScanSucceeds(t *testing.T) {
+	service, record, input, source := offlineFixture(t)
+	ctx := t.Context()
+	film := service.database.Movie.Create().SetCode(input.Code).SetJavdbID(input.JavdbID).SaveX(ctx)
+	service.database.File.Create().SetFileID("video").SetName("video.mp4").SetSize(1).
+		SetAccountID(source.AccountID).SetRootID(source.Directory.ID).SetMovie(film).ExecX(ctx)
+	body, err := tasks.EncodePayload(domain.ScanPayload{Source: source, OfflineTaskID: record.ID, Scan: domain.ScanProgress{Stage: "reconciling"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	parent := service.database.Task.Create().SetType("scan").SetPayload(body).SetStatus(task.StatusFailed).SetError("STRM export failed").SaveX(ctx)
+	record = record.Update().SetStatus(offlinedownload.StatusDone).SetScanTaskID(parent.ID).SetFileIds([]string{"video"}).SaveX(ctx)
+	result, err := service.submission(ctx, record, &source)
+	if err != nil || result.Phase != "in_library" || result.Error == nil || *result.Error != "STRM export failed" {
+		t.Fatalf("export failure was hidden: %+v, %v", result, err)
+	}
+	parent.Update().SetStatus(task.StatusDone).ClearError().ExecX(ctx)
+	result, err = service.submission(ctx, record, &source)
+	if err != nil || result.Error != nil || result.LibraryID != film.ID {
+		t.Fatalf("successful retry did not clear the failure: %+v, %v", result, err)
+	}
+}

@@ -54,6 +54,7 @@ func (c *Client) SetCredentials(username, password string) {
 	c.token = ""
 	c.authMu.Unlock()
 	c.webFallback.Store(false)
+	c.loginRejected.Store(false)
 }
 
 // Credentials returns the stored account.
@@ -80,7 +81,9 @@ func (c *Client) Login(ctx context.Context, username, password string) (LoginInf
 	if c.fingerprint == nil {
 		return LoginInfo{}, errors.New("JavDB web client is unavailable")
 	}
-	if err := c.limiter.Wait(ctx); err != nil {
+	if c.options.APIOnly {
+		if err:=c.waitRequest(ctx,time.Now().Add(maxRateLimitWait));err!=nil{return LoginInfo{},err}
+	} else if err := c.limiter.Wait(ctx); err != nil {
 		return LoginInfo{}, err
 	}
 	form := url.Values{"username": {username}, "password": {password}}
@@ -133,6 +136,22 @@ func (c *Client) Login(ctx context.Context, username, password string) (LoginInf
 // account is configured. Without credentials the original error is returned so
 // callers can fall back to the public web pages.
 func (c *Client) getJSONWithAuth(ctx context.Context, path string, params url.Values, destination any) error {
+	if c.options.APIOnly {
+		username,password := c.Credentials()
+		if c.accessToken()=="" && username!="" && password!="" {
+			_,err,_ := c.loginRequests.Do("browser-login",func()(any,error){
+				if c.accessToken()!="" { return nil,nil }
+				if c.loginRejected.Load() { return nil,ErrLoginRequired }
+				_,err := c.Login(ctx,username,password)
+				if requiresWebFallback(err) { c.loginRejected.Store(true) }
+				return nil,err
+			})
+			if err!=nil { return err }
+		}
+		err:=c.getJSON(ctx,path,params,destination)
+		if requiresWebFallback(err) { return ErrLoginRequired }
+		return err
+	}
 	err := c.getJSON(ctx, path, params, destination)
 	if err == nil || !requiresWebFallback(err) {
 		return err
@@ -145,6 +164,11 @@ func (c *Client) getJSONWithAuth(ctx context.Context, path string, params url.Va
 		return loginErr
 	}
 	return c.getJSON(ctx, path, params, destination)
+}
+
+func (c *Client) catalogueJSON(ctx context.Context,path string,params url.Values,destination any) error {
+	if c.options.APIOnly { return c.getJSONWithAuth(ctx,path,params,destination) }
+	return c.getJSON(ctx,path,params,destination)
 }
 
 func loginInfo(username string, raw json.RawMessage) LoginInfo {

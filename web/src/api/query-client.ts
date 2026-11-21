@@ -50,7 +50,7 @@ export function createAppQueryClient() {
       }
     }),
     defaultOptions: {
-      queries: { staleTime: 30_000, retry: false, refetchOnWindowFocus: false }
+      queries: { staleTime: 30_000, retry: false, refetchOnWindowFocus: false, refetchOnReconnect: false }
     }
   })
   return client

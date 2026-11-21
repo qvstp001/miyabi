@@ -51,6 +51,8 @@ type Client struct {
 	webFallback atomic.Bool
 
 	authMu   sync.RWMutex
+	loginRequests singleflight.Group
+	loginRejected atomic.Bool
 	username string
 	password string
 	token    string
@@ -84,6 +86,7 @@ func New(options Options) (*Client, error) {
 		fingerprint:  fingerprint,
 	}
 	client.selector = client.selectAndInstall
+	if options.APIOnly { client.limiter=rate.NewLimiter(rate.Every(time.Second),1) }
 	client.SetCredentials(options.Username, options.Password)
 	if options.Proxy != nil {
 		go client.watchProxy()
@@ -256,12 +259,14 @@ func (c *Client) getJSON(
 				delay = base + rand.N(base/2)
 			}
 			c.deferRequests(delay)
+			if c.options.APIOnly { return err }
 			if retries == maxRateLimitRetries {
 				return err
 			}
 			retries++
 			continue
 		}
+		if c.options.APIOnly && errors.As(err,&response) && response.StatusCode == 403 { return err }
 		if !routeFailure(err) || failover {
 			return err
 		}

@@ -17,11 +17,11 @@ export function PanDirectoryRow({
   disabled: boolean
 }) {
   const clear = useClearPanDirectory(accountID)
-  const action = directory ? '更换媒体目录' : '挂载媒体目录'
+  const action = directory ? '更换下载目录' : '选择下载目录'
 
   return (
     <>
-      <SettingRow title="媒体目录" description="选择 115 中的目录作为媒体库来源" inline>
+      <SettingRow title="下载目录" description="选择 115 下载完成后存放视频和字幕的目录" inline>
         <div className="flex items-center gap-2">
           <Tooltip>
             <PanDirectoryDialog accountID={accountID} directory={directory}>
@@ -55,12 +55,12 @@ export function PanDirectoryRow({
                   )}
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>取消挂载</TooltipContent>
+              <TooltipContent>取消选择</TooltipContent>
             </Tooltip>
           ) : null}
         </div>
       </SettingRow>
-      {clear.isError ? <InlineError>取消挂载未完成，请检查后端服务后重试。</InlineError> : null}
+      {clear.isError ? <InlineError>取消选择未完成，请检查后端服务后重试。</InlineError> : null}
     </>
   )
 }

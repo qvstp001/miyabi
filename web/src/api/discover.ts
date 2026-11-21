@@ -189,9 +189,10 @@ export function useRecommendationMovie(id: string) {
   }
 }
 
-export function useDiscoverMagnets(id: string) {
+export function useDiscoverMagnets(id: string, enabled = true) {
   return useQuery({
     queryKey: discoverKeys.magnets(id),
+    enabled,
     queryFn: ({ signal }) =>
       apiGet<DiscoverMagnet[]>(
         `/api/discover/movies/${encodeURIComponent(id)}/magnets`,

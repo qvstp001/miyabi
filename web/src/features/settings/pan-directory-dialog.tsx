@@ -31,9 +31,9 @@ export function PanDirectoryDialog({
       <DialogTrigger asChild>{children}</DialogTrigger>
       <DialogContent className="max-h-[calc(100dvh-2rem)] grid-cols-1 overflow-x-hidden overflow-y-auto sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>选择媒体目录</DialogTitle>
+          <DialogTitle>选择下载目录</DialogTitle>
           <DialogDescription>
-            进入目标文件夹后，点击“挂载当前目录”，系统会自动同步媒体库。
+            进入目标文件夹后选择当前目录。视频和同名字幕将在下载完成后整理到此处。
           </DialogDescription>
         </DialogHeader>
         {/* Keep the picker mounted through DialogContent's exit animation. */}
@@ -107,7 +107,7 @@ function DirectoryPicker({
           </Button>
         </div>
       </div>
-      {select.isError ? <InlineError>目录挂载未完成，请稍后重试。</InlineError> : null}
+      {select.isError ? <InlineError>目录选择未完成，请稍后重试。</InlineError> : null}
       <div className="flex justify-end">
         <Button
           type="button"
@@ -119,7 +119,7 @@ function DirectoryPicker({
           ) : (
             <FolderIcon className="size-4" />
           )}
-          {mounted ? '当前已挂载' : '挂载当前目录'}
+          {mounted ? '当前已选择' : '选择当前目录'}
         </Button>
       </div>
     </div>

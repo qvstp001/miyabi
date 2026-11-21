@@ -5,14 +5,11 @@ import { PageHeader } from '@/components/page-header'
 import { Card, CardContent } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
 import { AppearanceSection } from '@/features/settings/appearance-section'
-import { DataSection } from '@/features/settings/data-section'
-import { EmbySection } from '@/features/settings/emby-section'
+import { DownloadSection } from '@/features/settings/download-section'
 import { JavDBSection } from '@/features/settings/javdb-section'
 import { NetworkSection } from '@/features/settings/network-section'
 import { PanSection } from '@/features/settings/pan-section'
 import { PrivacySection } from '@/features/settings/privacy-section'
-import { SubscriptionSection } from '@/features/settings/subscription-section'
-import { TasksSection } from '@/features/settings/tasks-section'
 
 export const Route = createFileRoute('/settings')({
   component: SettingsPage
@@ -33,15 +30,9 @@ function SettingsPage() {
           <Separator />
           <JavDBSection />
           <Separator />
-          <EmbySection />
-          <Separator />
           <PanSection />
           <Separator />
-          <SubscriptionSection />
-          <Separator />
-          <TasksSection />
-          <Separator />
-          <DataSection />
+          <DownloadSection />
         </CardContent>
       </Card>
     </AppPage>

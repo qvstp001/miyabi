@@ -20,16 +20,16 @@ func (c *Client) MovieDetail(ctx context.Context, movieID string) (domain.MovieD
 	}
 
 	var data wireMovieData
-	if c.webFallback.Load() {
+	if !c.options.APIOnly && c.webFallback.Load() {
 		return c.movieDetailFromWeb(ctx, movieID)
 	}
-	if err := c.getJSON(
+	if err := c.catalogueJSON(
 		ctx,
 		"/api/v4/movies/"+url.PathEscape(movieID),
 		nil,
 		&data,
 	); err != nil {
-		if requiresWebFallback(err) {
+		if !c.options.APIOnly && requiresWebFallback(err) {
 			c.webFallback.Store(true)
 			return c.movieDetailFromWeb(ctx, movieID)
 		}

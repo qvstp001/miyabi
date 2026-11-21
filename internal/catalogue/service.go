@@ -60,6 +60,15 @@ func New(
 	local LocalState,
 	supplement JavBusSource,
 ) (*Service, error) {
+	return newCatalogue(ctx,db,proxy,local,supplement,false)
+}
+
+// NewBrowser keeps JavDB strictly interactive and excludes secondary scrapers.
+func NewBrowser(ctx context.Context,db *ent.Client,proxy *netx.ProxyManager) (*Service,error) {
+	return newCatalogue(ctx,db,proxy,nil,nil,true)
+}
+
+func newCatalogue(ctx context.Context,db *ent.Client,proxy *netx.ProxyManager,local LocalState,supplement JavBusSource,apiOnly bool) (*Service,error) {
 	deviceUUID, found, err := database.LoadSetting[string](ctx, db, javdbDeviceSetting)
 	if err != nil {
 		return nil, err
@@ -83,6 +92,7 @@ func New(
 		return nil, err
 	}
 	client, err := javdb.New(javdb.Options{
+		APIOnly:       apiOnly,
 		DeviceUUID:    deviceUUID,
 		Proxy:         proxy,
 		CachedHost:    route.Host,

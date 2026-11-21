@@ -20,6 +20,8 @@ const (
 
 // Options configures the anonymous JavDB App API client.
 type Options struct {
+	// APIOnly disables HTML fallback, challenge failover and automatic retries.
+	APIOnly bool
 	CachedHost    string
 	CachedLatency time.Duration
 	DeviceUUID    string

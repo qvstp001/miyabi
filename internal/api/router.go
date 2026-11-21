@@ -15,6 +15,9 @@ import (
 )
 
 type Dependencies struct {
+	Browser        bool
+	Downloads      DownloadManager
+	History        ViewedManager
 	Logger         *slog.Logger
 	Access         AccessGate
 	Explore        CatalogueExplorer
@@ -66,27 +69,34 @@ func NewRouter(deps Dependencies) *gin.Engine {
 	authAPI.GET("/config", accessConfigHandler(deps.Access))
 	authAPI.POST("/login", accessLoginHandler(deps.Access, loginLimiter))
 
-	// Exported .strm files keep this path; it must stay stable across releases.
+	if !deps.Browser {
+	// Legacy media server routes are not part of the browser application.
 	strmHandler := strmStreamHandler(deps.STRM, deps.STRMToken, deps.Access)
 	api.GET("/strm/play/:fileID", noStore(), strmHandler)
 	api.HEAD("/strm/play/:fileID", noStore(), strmHandler)
 	api.GET("/strm/play/:fileID/*filename", noStore(), strmHandler)
 	api.HEAD("/strm/play/:fileID/*filename", noStore(), strmHandler)
+	}
 
 	protected := api.Group("", authMiddleware(deps.Access))
 
 	settingsAPI := protected.Group("/settings", noStore())
+	if !deps.Browser {
 	settingsAPI.GET("/system", dataInfoHandler(deps.Maintenance))
 	settingsAPI.DELETE("/cache", dataClearCacheHandler(deps.Maintenance))
+	}
 	settingsAPI.GET("/network", networkHandler(deps.Network))
 	settingsAPI.PUT("/network", networkUpdateHandler(deps.Network))
 	settingsAPI.POST("/network/test", networkTestHandler(deps.Network))
+	if !deps.Browser {
 	settingsAPI.GET("/emby", embyConfigHandler(deps.Emby))
 	settingsAPI.PUT("/emby", embyUpdateHandler(deps.Emby))
 	settingsAPI.POST("/emby/test", embyTestHandler(deps.Emby))
+	}
 	settingsAPI.GET("/javdb", javdbConfigHandler(deps.JavDB))
 	settingsAPI.PUT("/javdb", javdbUpdateHandler(deps.JavDB))
 	settingsAPI.POST("/javdb/test", javdbTestHandler(deps.JavDB))
+	if !deps.Browser {
 	settingsAPI.GET("/subscription", subscriptionSettingsGetHandler(deps.Monitor))
 	settingsAPI.PUT("/subscription", subscriptionSettingsUpdateHandler(deps.Monitor))
 
@@ -114,6 +124,8 @@ func NewRouter(deps Dependencies) *gin.Engine {
 	subscriptionsAPI.POST("/enqueue", subscriptionEnqueueBatchHandler(deps.Monitor))
 	subscriptionsAPI.GET("/actors/feed", subscriptionActorFeedHandler(deps.Monitor))
 	subscriptionsAPI.GET("/actors/:id/feed", subscriptionActorFeedHandler(deps.Monitor))
+	}
+	if deps.Downloads != nil { installDownloadRoutes(protected,settingsAPI,deps.Downloads) }
 
 	if deps.Explore != nil {
 		installExploreRoutes(protected, deps.Explore)
@@ -121,14 +133,16 @@ func NewRouter(deps Dependencies) *gin.Engine {
 
 	protected.GET("/discover/movies", discoverBrowseHandler(deps.Catalogue))
 	protected.POST("/discover/movie-states", noStore(), discoverMovieStatesHandler(deps.Catalogue))
-	protected.GET("/discover/viewed", noStore(), discoverViewedHandler(deps.Library))
-	protected.POST("/discover/viewed", discoverAddViewedHandler(deps.Library))
+	history := deps.History
+	if history == nil { history = deps.Library }
+	protected.GET("/discover/viewed", noStore(), discoverViewedHandler(history))
+	protected.POST("/discover/viewed", discoverAddViewedHandler(history))
 	protected.GET("/discover/search", discoverSearchHandler(deps.Catalogue))
 	protected.GET("/discover/tags", discoverTagsHandler(deps.Catalogue))
 	protected.GET("/discover/movies/:id", discoverMovieHandler(deps.Catalogue))
 	protected.GET("/discover/movies/resolve", discoverResolveMovieHandler(deps.Catalogue))
 	protected.GET("/discover/movies/:id/magnets", discoverMagnetsHandler(deps.Catalogue))
-	protected.POST("/discover/movies/:id/offline", offlineAddHandler(deps.Offline))
+	if !deps.Browser { protected.POST("/discover/movies/:id/offline", offlineAddHandler(deps.Offline)) }
 	protected.GET("/image", imageHandler(deps.Catalogue))
 
 	panAPI := protected.Group("/pan", noStore())

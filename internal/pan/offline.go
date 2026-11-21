@@ -10,6 +10,7 @@ import (
 )
 
 type OfflineTask struct {
+	URL string
 	Hash     string
 	Status   int
 	Progress int
@@ -21,6 +22,7 @@ type OfflineTask struct {
 }
 
 type offlineTaskWire struct {
+	URL         string      `json:"url"`
 	Hash        string      `json:"info_hash"`
 	Status      int         `json:"status"`
 	Progress    json.Number `json:"percentDone"`
@@ -42,6 +44,7 @@ func (wire offlineTaskWire) task() (OfflineTask, error) {
 		}
 	}
 	return OfflineTask{
+		URL: wire.URL,
 		Hash: wire.Hash, Status: wire.Status, Progress: int(max(0, min(100, progress))),
 		RawProgress:     max(0, min(100, progress)),
 		ProgressUnknown: wire.Progress == "",

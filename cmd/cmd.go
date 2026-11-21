@@ -34,7 +34,7 @@ func run(ctx context.Context, args []string) error {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.LogLevel}))
 	slog.SetDefault(logger)
 
-	application, err := app.New(&cfg, logger)
+	application, err := app.NewBrowser(&cfg, logger)
 	if err != nil {
 		return err
 	}

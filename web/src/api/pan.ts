@@ -66,6 +66,7 @@ export const panKeys = {
 }
 
 export function invalidatePanSource(queryClient: QueryClient) {
+  void queryClient.invalidateQueries({ queryKey: ['downloads'] })
   void queryClient.invalidateQueries({ queryKey: ['library'] })
   void queryClient.invalidateQueries({ queryKey: ['offline'] })
   void resetMovieStates(queryClient)

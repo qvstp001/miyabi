@@ -196,7 +196,7 @@ func SourceInfo(ctx context.Context, sess Session, id string) (pan.FileInfo, err
 		return pan.FileInfo{}, err
 	}
 	if !WithinSource(info, sess.Source()) {
-		return pan.FileInfo{}, domain.E(domain.KindNotFound, "下载资源已移出媒体目录", nil)
+		return pan.FileInfo{}, domain.E(domain.KindNotFound, "下载资源已移出指定 115 目录", nil)
 	}
 	return info, nil
 }
@@ -210,7 +210,7 @@ func DirectoryEntries(ctx context.Context, sess Session, id string) ([]pan.File,
 			return pan.FilePage{}, err
 		}
 		if !slices.ContainsFunc(page.Path, func(directory pan.Directory) bool { return directory.ID == sess.Source().Directory.ID }) {
-			return pan.FilePage{}, domain.E(domain.KindConflict, "该文件夹已移出媒体目录，请重新扫描", nil)
+			return pan.FilePage{}, domain.E(domain.KindConflict, "该文件夹已移出指定 115 目录，请检查下载任务", nil)
 		}
 		return page, nil
 	}, func(page pan.FilePage) (bool, error) {

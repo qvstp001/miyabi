@@ -17,6 +17,7 @@ type Attempt struct {
 // Recovery is a durable checkpoint. A replacement is never submitted until
 // removal of its predecessor has succeeded. The task ID remains unchanged.
 type Recovery struct {
+	Transfer          *Transfer         `json:"transfer,omitempty"`
 	Preferences       magnet.Preferences `json:"preferences"`
 	Attempts          []Attempt          `json:"attempts"`
 	CurrentHash       string             `json:"current_hash"`

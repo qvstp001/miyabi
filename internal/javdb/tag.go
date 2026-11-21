@@ -17,7 +17,7 @@ func (c *Client) Tags(ctx context.Context, zone domain.Zone) ([]domain.TagCatego
 	}
 
 	var data wireTagsData
-	if err := c.getJSON(
+	if err := c.catalogueJSON(
 		ctx,
 		"/api/v2/tags",
 		url.Values{"type": {strconv.Itoa(code)}},
